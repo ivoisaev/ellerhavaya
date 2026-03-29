@@ -53,11 +53,13 @@ export default function Crowd() {
       return x - Math.floor(x);
     };
 
-    // Mobilde emoji sayısını azalttık ki rahat dokunulsun
-    const isMobile = window.innerWidth < 768;
-    const spotCount = isMobile ? 2500 : 6000; 
+    // 🚀 ÇÖZÜM BURADA: Artık telefonda veya PC'de fark etmez, kalabalık sabit 5000 kişidir. 
+    // Bu sayede veri kaybı yaşanmaz ve her cihazda aynı harita çıkar.
+    const spotCount = 5000; 
     
+    // Ayrıca veritabanındaki grid_index'ler (100.000'e kadar çıkan sayılar) modülo alınarak 5000'e sığdırılıyor.
     const allSpots = Array.from({ length: spotCount }).map((_, index) => {
+      // Bu koltuk numarasına düşen gerçek bir mesaj var mı?
       const liveSpot = liveSpots.find(s => (s.grid_index % spotCount) === index);
       return {
         x: seededRandom(index * 123.456), 
@@ -76,6 +78,9 @@ export default function Crowd() {
     let currentHeroIndex = -1;
     let heroTimer = 0;
     let heroDuration = 180; 
+
+    // Mobil Cihaz Kontrolü (Sadece dokunma hassasiyetini ayarlamak için, emoji sayısını bozmak için değil)
+    const isMobile = typeof window !== "undefined" && window.innerWidth < 768;
 
     const drawCrowd = () => {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -98,14 +103,18 @@ export default function Crowd() {
          const dx = px - mouseX;
          const dy = py - mouseY;
          const distToMouse = Math.sqrt(dx * dx + dy * dy);
-         const isHovered = distToMouse < (isMobile ? 100 : 70); // Mobilde feneri büyüttük
+         
+         // Mobilde fener (spotlight) çapı 100px, PC'de 70px olsun (Parmakla dokunmak rahat olsun diye)
+         const isHovered = distToMouse < (isMobile ? 100 : 70); 
 
          const isHero = index === currentHeroIndex && heroTimer > 0;
 
+         // Boyutlandırma
          let baseSize = (isMobile ? 4 : 3) + (distance * 16); 
          let size = isHero ? baseSize * 2.5 : baseSize; 
 
          if (spot.isFilled) {
+            // DOLU EMOJİLER
             ctx.globalAlpha = (isHovered || isHero) ? 1 : 0.6 + (distance * 0.4);
             ctx.fillStyle = spot.color;
             ctx.font = `${size}px Arial`;
@@ -113,7 +122,8 @@ export default function Crowd() {
             const drawY = isHero ? py - 10 : py;
             ctx.fillText("🙌", px, drawY);
             
-            if ((isHovered && distToMouse < 30) || isHero) {
+            // Fener tutulduğunda (Veya Hero olduğunda) Kutu Aç
+            if ((isHovered && distToMouse < 40) || isHero) {
               const text = spot.message;
               const shortText = text.length > 20 ? text.substring(0, 20) + "..." : text;
               
@@ -133,13 +143,16 @@ export default function Crowd() {
               ctx.fillText(shortText, px - 10, boxY + 30);
             }
          } else {
+            // BOŞ SİLÜETLER
             if (isHovered) {
-                ctx.globalAlpha = 1 - (distToMouse / 90); 
+                // Işık
+                ctx.globalAlpha = 1 - (distToMouse / (isMobile ? 100 : 90)); 
                 ctx.fillStyle = "#ffcc00"; 
                 ctx.font = `${size}px Arial`;
                 ctx.fillText("🙌", px, py);
             } else {
-                ctx.globalAlpha = 0.2 + (distance * 0.3);
+                // Karanlık Silüet Noktalar (Mobilde biraz daha parlak yapalım ki zifiri karanlık durmasın)
+                ctx.globalAlpha = isMobile ? 0.3 + (distance * 0.3) : 0.2 + (distance * 0.3);
                 ctx.fillStyle = "#334155"; 
                 ctx.beginPath();
                 ctx.arc(px, py, size / 3, 0, Math.PI * 2);
@@ -162,14 +175,12 @@ export default function Crowd() {
       }
     };
 
-    // --- MOUSE KONTROLLERİ ---
     const handleMouseMove = (e: MouseEvent) => {
       const rect = canvas.getBoundingClientRect();
       mouseX = e.clientX - rect.left;
       mouseY = e.clientY - rect.top;
     };
 
-    // --- MOBİL (TOUCH) KONTROLLERİ EKLENDİ ---
     const handleTouchMove = (e: TouchEvent) => {
       if(e.touches.length > 0) {
         const rect = canvas.getBoundingClientRect();
@@ -180,17 +191,16 @@ export default function Crowd() {
 
     const handleMouseLeave = () => { mouseX = -1000; mouseY = -1000; };
 
-    // --- TIKLAMA KONTROLÜ (MOBİL VE PC) ---
     const handleClick = (e: MouseEvent | TouchEvent) => {
       const rect = canvas.getBoundingClientRect();
       let cx = 0, cy = 0;
 
-      if ("touches" in e) { // Eğer telefondan dokunulduysa
+      if ("touches" in e) {
         if (e.touches.length > 0) {
           cx = e.touches[0].clientX - rect.left;
           cy = e.touches[0].clientY - rect.top;
         }
-      } else { // Eğer PC'den tıklandıysa
+      } else {
         cx = (e as MouseEvent).clientX - rect.left;
         cy = (e as MouseEvent).clientY - rect.top;
       }
@@ -200,7 +210,7 @@ export default function Crowd() {
          const px = spot.x * rect.width;
          const py = spot.y * rect.height;
          const dist = Math.sqrt(Math.pow(px - cx, 2) + Math.pow(py - cy, 2));
-         return dist < (isMobile ? 40 : 30); // Mobilde parmak kalın olduğu için tıklama alanını büyüttük
+         return dist < (isMobile ? 50 : 30); // Mobilde tıklama alanı "50px"e çıkarıldı ki kolayca bulsun.
       });
 
       if (clickedSpot) {
@@ -213,7 +223,6 @@ export default function Crowd() {
     canvas.addEventListener("mouseleave", handleMouseLeave);
     canvas.addEventListener("click", handleClick);
     
-    // Mobil Eventleri
     canvas.addEventListener("touchstart", handleTouchMove, { passive: true });
     canvas.addEventListener("touchmove", handleTouchMove, { passive: true });
     canvas.addEventListener("touchend", handleClick);
@@ -251,7 +260,6 @@ export default function Crowd() {
             <div className="absolute top-0 left-0 w-full h-2" style={{ backgroundColor: selectedSpot.color }} />
             <span className="text-4xl sm:text-5xl mb-4 block" style={{ textShadow: `0 0 20px ${selectedSpot.color}` }}>🙌</span>
             
-            {/* break-words sayesinde uzun yazılar telefonda ekrandan taşmaz, alt satıra iner */}
             <h3 className="text-lg sm:text-xl font-bold text-white mb-6 break-words">"{selectedSpot.message}"</h3>
             
             <p className="text-xs sm:text-sm font-bold tracking-widest uppercase text-zinc-500 mb-6">
