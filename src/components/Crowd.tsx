@@ -11,13 +11,10 @@ interface Spot {
 
 export default function Crowd() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  
-  // Veriler yüklendi mi? (Burası Canvas'a ne zaman çizeceğini söyleyecek)
   const [isDataLoaded, setIsDataLoaded] = useState(false);
   const [liveSpots, setLiveSpots] = useState<Spot[]>([]);
   const [selectedSpot, setSelectedSpot] = useState<Spot | null>(null);
 
-  // 1. ADIM: VERİLERİ SUPABASE'DEN ÇEK
   useEffect(() => {
     const fetchSpots = async () => {
       const { data } = await supabase.from("spots").select("grid_index, message, location").limit(100);
@@ -28,7 +25,7 @@ export default function Crowd() {
         }));
         setLiveSpots(coloredData);
       }
-      setIsDataLoaded(true); // Veriler geldi! Artık çizebiliriz.
+      setIsDataLoaded(true);
     };
     fetchSpots();
 
@@ -47,9 +44,8 @@ export default function Crowd() {
     return () => { supabase.removeChannel(subscription); };
   }, []);
 
-  // 2. ADIM: VERİLER GELDİKTEN SONRA CANVAS'I ÇİZ
   useEffect(() => {
-    if (!isDataLoaded) return; // Veriler gelmeden sakın çizme!
+    if (!isDataLoaded) return;
 
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -62,9 +58,10 @@ export default function Crowd() {
     };
 
     const isMobile = typeof window !== "undefined" && window.innerWidth < 768;
-    const spotCount = 5000; 
     
-    // 🚀 DİKKAT: Artık bu dizi oluşturulurken liveSpots KESİN DOLU oluyor.
+    // Mobilde daha az emoji çizerek karmaşayı/üst üste binmeyi önlüyoruz
+    const spotCount = isMobile ? 2000 : 5000; 
+    
     const allSpots = Array.from({ length: spotCount }).map((_, index) => {
       const liveSpot = liveSpots.find(s => (s.grid_index % spotCount) === index);
       return {
@@ -78,6 +75,10 @@ export default function Crowd() {
       };
     });
 
+    // 🚀 ÇÖZÜM: Boş ve Dolu noktaları ayır. Önce boşlar, SONRA EN ÜSTE dolular çizilecek!
+    const emptySpots = allSpots.filter(spot => !spot.isFilled);
+    const filledSpots = allSpots.filter(spot => spot.isFilled);
+
     let animationFrameId: number;
     let currentHeroIndex = -1;
     let heroTimer = 0;
@@ -86,64 +87,68 @@ export default function Crowd() {
     const drawCrowd = () => {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      if (heroTimer <= 0 && liveSpots.length > 0) {
-        const filledSpots = allSpots.filter(s => s.isFilled);
-        if (filledSpots.length > 0) {
-          const randomIndex = Math.floor(Math.random() * filledSpots.length);
-          currentHeroIndex = allSpots.indexOf(filledSpots[randomIndex]);
-          heroTimer = heroDuration; 
-        }
+      if (heroTimer <= 0 && filledSpots.length > 0) {
+        const randomIndex = Math.floor(Math.random() * filledSpots.length);
+        // Doğrudan filledSpots içindeki index'i Hero yapıyoruz
+        currentHeroIndex = randomIndex;
+        heroTimer = heroDuration; 
       }
       if (heroTimer > 0) heroTimer--; 
 
-      allSpots.forEach((spot, index) => {
+      // 1. ÖNCE BOŞ SİLÜETLERİ (ARKA PLANI) ÇİZ
+      emptySpots.forEach((spot) => {
+         const px = spot.x * canvas.width;
+         const py = spot.y * canvas.height;
+         const distance = spot.y; 
+         
+         let size = (isMobile ? 8 : 4) + (distance * 18); 
+
+         ctx.globalAlpha = isMobile ? 0.3 + (distance * 0.3) : 0.15 + (distance * 0.3);
+         ctx.fillStyle = "#334155"; 
+         ctx.beginPath();
+         ctx.arc(px, py, size / 3, 0, Math.PI * 2);
+         ctx.fill();
+      });
+
+      // 2. SONRA DOLU (GERÇEK) MESAJLARI EN ÜSTE ÇİZ
+      filledSpots.forEach((spot, index) => {
          const px = spot.x * canvas.width;
          const py = spot.y * canvas.height;
          const distance = spot.y; 
 
          const isHero = index === currentHeroIndex && heroTimer > 0;
 
-         // 🚀 MOBİLDE EMOJİLER BÜYÜTÜLDÜ (Daha rahat görünmesi ve tıklanması için)
-         let baseSize = (isMobile ? 8 : 4) + (distance * 18); 
+         let baseSize = (isMobile ? 12 : 8) + (distance * 18); // Mobilde Gerçek Mesajlar KOCAMAN ve belirgin olsun
          let size = isHero ? baseSize * 2.5 : baseSize; 
 
-         if (spot.isFilled) {
-            // GERÇEK MESAJLAR PARIL PARIL YANSIN
-            ctx.globalAlpha = isHero ? 1 : 0.85 + (distance * 0.15); // Her zaman çok parlak
-            ctx.fillStyle = spot.color;
-            ctx.font = `${size}px Arial`;
-            
-            const drawY = isHero ? py - 10 : py;
-            ctx.fillText("🙌", px, drawY);
-            
-            if (isHero) {
-              const text = spot.message;
-              const shortText = text.length > 20 ? text.substring(0, 20) + "..." : text;
-              
-              const boxY = drawY - size - 40;
-              ctx.fillStyle = "rgba(0, 0, 0, 0.9)";
-              ctx.fillRect(px - 15, boxY, 160, 35);
-              ctx.strokeStyle = spot.color;
-              ctx.lineWidth = 1;
-              ctx.strokeRect(px - 15, boxY, 160, 35);
+         ctx.globalAlpha = isHero ? 1 : 0.9; // Her zaman çok parlak, asla kapanmaz
+         ctx.fillStyle = spot.color; // Pembe / Mavi Neon
+         ctx.font = `${size}px Arial`;
+         
+         const drawY = isHero ? py - 10 : py;
+         ctx.fillText("🙌", px, drawY);
+         
+         if (isHero) {
+           const text = spot.message;
+           const shortText = text.length > 20 ? text.substring(0, 20) + "..." : text;
+           
+           const boxY = drawY - size - 40;
+           ctx.fillStyle = "rgba(0, 0, 0, 0.9)";
+           ctx.fillRect(px - 15, boxY, 160, 35);
+           ctx.strokeStyle = spot.color;
+           ctx.lineWidth = 1;
+           ctx.strokeRect(px - 15, boxY, 160, 35);
 
-              ctx.fillStyle = "#a1a1aa"; 
-              ctx.font = "bold 9px Arial";
-              ctx.fillText(`📍 ${spot.location || "Gizli"}`, px - 10, boxY + 15);
+           ctx.fillStyle = "#a1a1aa"; 
+           ctx.font = "bold 9px Arial";
+           ctx.fillText(`📍 ${spot.location || "Gizli"}`, px - 10, boxY + 15);
 
-              ctx.fillStyle = "#ffffff";
-              ctx.font = "bold 11px Arial";
-              ctx.fillText(shortText, px - 10, boxY + 30);
-            }
-         } else {
-            // BOŞ SİLÜETLER (Sadece Gri Noktalar)
-            ctx.globalAlpha = isMobile ? 0.25 + (distance * 0.3) : 0.15 + (distance * 0.3);
-            ctx.fillStyle = "#334155"; 
-            ctx.beginPath();
-            ctx.arc(px, py, size / 3, 0, Math.PI * 2);
-            ctx.fill();
+           ctx.fillStyle = "#ffffff";
+           ctx.font = "bold 11px Arial";
+           ctx.fillText(shortText, px - 10, boxY + 30);
          }
       });
+
       animationFrameId = requestAnimationFrame(drawCrowd);
     };
 
@@ -173,8 +178,8 @@ export default function Crowd() {
         cy = (e as MouseEvent).clientY - rect.top;
       }
 
-      const clickedSpot = allSpots.find(spot => {
-         if (!spot.isFilled) return false;
+      // 🚀 Tıklama Kontrolünde Sadece Dolu Spotlara Bak (Tepkime süresi 10 kat artar)
+      const clickedSpot = filledSpots.find(spot => {
          const px = spot.x * rect.width;
          const py = spot.y * rect.height;
          const dist = Math.sqrt(Math.pow(px - cx, 2) + Math.pow(py - cy, 2));
@@ -199,7 +204,7 @@ export default function Crowd() {
       canvas.removeEventListener("touchend", handleClick);
       cancelAnimationFrame(animationFrameId);
     };
-  }, [liveSpots, isDataLoaded]); // 🚀 KRİTİK NOKTA: Veri Geldiği An Kendini Yenile
+  }, [liveSpots, isDataLoaded]); 
 
   return (
     <>
