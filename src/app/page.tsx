@@ -114,11 +114,11 @@ export default function Home() {
           <div className="w-[90%] sm:w-[60%] h-full bg-zinc-900 border-t-8 border-x-8 border-zinc-950 rounded-t-[3rem] sm:rounded-t-[5rem] flex items-center justify-center z-10 relative shadow-[0_-10px_50px_rgba(0,0,0,0.5)] mx-[-10px]">
             {timeMode === "night" && <div className="absolute top-0 w-full h-1/2 bg-gradient-to-b from-[#ff007f]/30 to-transparent blur-2xl pointer-events-none" />}
             
-            {/* 🚀 VİDEO EKRANI (Tıklama engelleri kaldırıldı, en öne alındı) */}
+            {/* 🚀 VİDEO EKRANI (Carl Cox - Boiler Room Ibiza) */}
             <div className="w-[85%] h-[75%] bg-black border-4 border-zinc-800 rounded-xl relative shadow-[0_0_30px_rgba(0,0,0,0.8)] z-50 pointer-events-auto">
               <iframe 
                 className="absolute top-0 left-0 w-full h-full rounded-lg"
-                src="https://www.youtube.com/embed/5qap5aO4i9A?controls=1&mute=0&rel=0" 
+                src="https://www.youtube.com/embed/5n08qA8_DGU?controls=1&mute=0&rel=0" 
                 title="Eller Havaya Canlı Sahne"
                 allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
                 allowFullScreen
