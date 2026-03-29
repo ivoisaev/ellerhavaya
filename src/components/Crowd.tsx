@@ -53,13 +53,9 @@ export default function Crowd() {
       return x - Math.floor(x);
     };
 
-    // 🚀 ÇÖZÜM BURADA: Artık telefonda veya PC'de fark etmez, kalabalık sabit 5000 kişidir. 
-    // Bu sayede veri kaybı yaşanmaz ve her cihazda aynı harita çıkar.
     const spotCount = 5000; 
     
-    // Ayrıca veritabanındaki grid_index'ler (100.000'e kadar çıkan sayılar) modülo alınarak 5000'e sığdırılıyor.
     const allSpots = Array.from({ length: spotCount }).map((_, index) => {
-      // Bu koltuk numarasına düşen gerçek bir mesaj var mı?
       const liveSpot = liveSpots.find(s => (s.grid_index % spotCount) === index);
       return {
         x: seededRandom(index * 123.456), 
@@ -73,13 +69,10 @@ export default function Crowd() {
     });
 
     let animationFrameId: number;
-    let mouseX = -1000;
-    let mouseY = -1000;
     let currentHeroIndex = -1;
     let heroTimer = 0;
-    let heroDuration = 180; 
+    let heroDuration = 180; // 3 saniye havada kalır
 
-    // Mobil Cihaz Kontrolü (Sadece dokunma hassasiyetini ayarlamak için, emoji sayısını bozmak için değil)
     const isMobile = typeof window !== "undefined" && window.innerWidth < 768;
 
     const drawCrowd = () => {
@@ -99,31 +92,23 @@ export default function Crowd() {
          const px = spot.x * canvas.width;
          const py = spot.y * canvas.height;
          const distance = spot.y; 
-         
-         const dx = px - mouseX;
-         const dy = py - mouseY;
-         const distToMouse = Math.sqrt(dx * dx + dy * dy);
-         
-         // Mobilde fener (spotlight) çapı 100px, PC'de 70px olsun (Parmakla dokunmak rahat olsun diye)
-         const isHovered = distToMouse < (isMobile ? 100 : 70); 
 
          const isHero = index === currentHeroIndex && heroTimer > 0;
 
-         // Boyutlandırma
-         let baseSize = (isMobile ? 4 : 3) + (distance * 16); 
+         let baseSize = (isMobile ? 5 : 4) + (distance * 16); 
          let size = isHero ? baseSize * 2.5 : baseSize; 
 
          if (spot.isFilled) {
-            // DOLU EMOJİLER
-            ctx.globalAlpha = (isHovered || isHero) ? 1 : 0.6 + (distance * 0.4);
+            // 🚀 GERÇEK MESAJLAR ARTIK HER ZAMAN PARLIYOR (Fener Yok)
+            ctx.globalAlpha = isHero ? 1 : 0.8 + (distance * 0.2);
             ctx.fillStyle = spot.color;
             ctx.font = `${size}px Arial`;
             
             const drawY = isHero ? py - 10 : py;
             ctx.fillText("🙌", px, drawY);
             
-            // Fener tutulduğunda (Veya Hero olduğunda) Kutu Aç
-            if ((isHovered && distToMouse < 40) || isHero) {
+            // Sadece Hero (Zıplayan) olduğunda mesaj kutusu açılır
+            if (isHero) {
               const text = spot.message;
               const shortText = text.length > 20 ? text.substring(0, 20) + "..." : text;
               
@@ -143,21 +128,12 @@ export default function Crowd() {
               ctx.fillText(shortText, px - 10, boxY + 30);
             }
          } else {
-            // BOŞ SİLÜETLER
-            if (isHovered) {
-                // Işık
-                ctx.globalAlpha = 1 - (distToMouse / (isMobile ? 100 : 90)); 
-                ctx.fillStyle = "#ffcc00"; 
-                ctx.font = `${size}px Arial`;
-                ctx.fillText("🙌", px, py);
-            } else {
-                // Karanlık Silüet Noktalar (Mobilde biraz daha parlak yapalım ki zifiri karanlık durmasın)
-                ctx.globalAlpha = isMobile ? 0.3 + (distance * 0.3) : 0.2 + (distance * 0.3);
-                ctx.fillStyle = "#334155"; 
-                ctx.beginPath();
-                ctx.arc(px, py, size / 3, 0, Math.PI * 2);
-                ctx.fill();
-            }
+            // BOŞ SİLÜETLER (Sadece arka plan dekoru)
+            ctx.globalAlpha = isMobile ? 0.25 + (distance * 0.3) : 0.15 + (distance * 0.3);
+            ctx.fillStyle = "#334155"; 
+            ctx.beginPath();
+            ctx.arc(px, py, size / 3, 0, Math.PI * 2);
+            ctx.fill();
          }
       });
       animationFrameId = requestAnimationFrame(drawCrowd);
@@ -175,22 +151,7 @@ export default function Crowd() {
       }
     };
 
-    const handleMouseMove = (e: MouseEvent) => {
-      const rect = canvas.getBoundingClientRect();
-      mouseX = e.clientX - rect.left;
-      mouseY = e.clientY - rect.top;
-    };
-
-    const handleTouchMove = (e: TouchEvent) => {
-      if(e.touches.length > 0) {
-        const rect = canvas.getBoundingClientRect();
-        mouseX = e.touches[0].clientX - rect.left;
-        mouseY = e.touches[0].clientY - rect.top;
-      }
-    };
-
-    const handleMouseLeave = () => { mouseX = -1000; mouseY = -1000; };
-
+    // 🚀 TIKLAMA TESPİTİ
     const handleClick = (e: MouseEvent | TouchEvent) => {
       const rect = canvas.getBoundingClientRect();
       let cx = 0, cy = 0;
@@ -210,7 +171,7 @@ export default function Crowd() {
          const px = spot.x * rect.width;
          const py = spot.y * rect.height;
          const dist = Math.sqrt(Math.pow(px - cx, 2) + Math.pow(py - cy, 2));
-         return dist < (isMobile ? 50 : 30); // Mobilde tıklama alanı "50px"e çıkarıldı ki kolayca bulsun.
+         return dist < (isMobile ? 40 : 25); // Dokunma alanı
       });
 
       if (clickedSpot) {
@@ -219,12 +180,9 @@ export default function Crowd() {
     };
 
     window.addEventListener("resize", resize);
-    canvas.addEventListener("mousemove", handleMouseMove);
-    canvas.addEventListener("mouseleave", handleMouseLeave);
-    canvas.addEventListener("click", handleClick);
     
-    canvas.addEventListener("touchstart", handleTouchMove, { passive: true });
-    canvas.addEventListener("touchmove", handleTouchMove, { passive: true });
+    // Feneri sildiğimiz için sadece Tıklama Eventleri kaldı
+    canvas.addEventListener("click", handleClick);
     canvas.addEventListener("touchend", handleClick);
     
     resize();
@@ -232,11 +190,7 @@ export default function Crowd() {
 
     return () => {
       window.removeEventListener("resize", resize);
-      canvas.removeEventListener("mousemove", handleMouseMove);
-      canvas.removeEventListener("mouseleave", handleMouseLeave);
       canvas.removeEventListener("click", handleClick);
-      canvas.removeEventListener("touchstart", handleTouchMove);
-      canvas.removeEventListener("touchmove", handleTouchMove);
       canvas.removeEventListener("touchend", handleClick);
       cancelAnimationFrame(animationFrameId);
     };
@@ -244,9 +198,9 @@ export default function Crowd() {
 
   return (
     <>
-      <canvas ref={canvasRef} className="w-full h-full cursor-crosshair block" />
+      <canvas ref={canvasRef} className="w-full h-full cursor-pointer block" />
 
-      {/* 🌟 MOBİL UYUMLU BÜYÜYEN MESAJ KARTI */}
+      {/* 🌟 BÜYÜYEN MESAJ KARTI */}
       {selectedSpot && (
         <div 
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm cursor-pointer p-4"
