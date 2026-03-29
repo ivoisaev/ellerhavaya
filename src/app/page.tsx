@@ -114,24 +114,43 @@ export default function Home() {
           <div className="w-[90%] sm:w-[60%] h-full bg-zinc-900 border-t-8 border-x-8 border-zinc-950 rounded-t-[3rem] sm:rounded-t-[5rem] flex items-center justify-center z-10 relative shadow-[0_-10px_50px_rgba(0,0,0,0.5)] mx-[-10px]">
             {timeMode === "night" && <div className="absolute top-0 w-full h-1/2 bg-gradient-to-b from-[#ff007f]/30 to-transparent blur-2xl pointer-events-none" />}
             
-            {/* 🚀 VİDEO EKRANI (%100 ÇALIŞAN TELİFSİZ LİNK VE TASARIM) */}
-            <div className="w-[85%] h-[75%] bg-black border-4 border-zinc-800 rounded-xl relative shadow-[0_0_30px_rgba(0,0,0,0.8)] z-50 overflow-hidden group">
+            {/* 🚀 VİDEO EKRANI İPTAL -> HİPNOTİK SAHNE EKRANI (HATA VERMEZ) */}
+            <div className="w-[85%] h-[75%] bg-black border-4 border-zinc-800 rounded-xl relative shadow-[0_0_30px_rgba(0,0,0,0.8)] z-50 overflow-hidden flex flex-col items-center justify-center group">
               
-              {/* YouTube Embed'i (Eğer çalışmazsa altındaki tasarım devreye girsin diye) */}
-              <iframe 
-                className="absolute top-0 left-0 w-full h-full rounded-lg z-10 pointer-events-auto"
-                src="https://www.youtube.com/embed/AOeY-nDp7hI?controls=1&mute=0&rel=0&autoplay=0" 
-                title="Eller Havaya Canlı Sahne"
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
-                allowFullScreen
+              {/* Hipnotik Sahne Görseli (Güvenilir Giphy Bağlantısı) */}
+              <img 
+                src="https://media.giphy.com/media/l41YmiAHEtA1tM520/giphy.gif" 
+                alt="Eller Havaya Lazerler"
+                className="absolute inset-0 w-full h-full object-cover opacity-60 mix-blend-screen"
               />
 
-              {/* YouTube Çalışmazsa Diye Altta Kalan Havalı Tasarım (Hata Ekranını Kapatır) */}
-              <div className="absolute inset-0 bg-gradient-to-br from-zinc-900 to-black z-0 flex flex-col items-center justify-center pointer-events-none">
-                <div className="w-16 h-16 rounded-full border-4 border-[#ff007f] border-t-transparent animate-spin mb-4 shadow-[0_0_20px_rgba(255,0,127,0.5)]" />
-                <h2 className="text-xl sm:text-2xl font-black text-white tracking-widest uppercase">CANLI YAYIN BEKLENİYOR</h2>
-                <p className="text-sm text-zinc-500 tracking-widest mt-2">ELLER HAVAYA FM</p>
+              {/* Ekran Tasarımı ve Logomuz */}
+              <div className="z-10 text-center flex flex-col items-center gap-4 relative">
+                
+                {/* Oynat Butonu ve Titreşim Efekti */}
+                <div className="w-16 h-16 sm:w-20 sm:h-20 bg-[#ff007f]/20 rounded-full flex items-center justify-center animate-pulse border border-[#ff007f]/50 shadow-[0_0_30px_rgba(255,0,127,0.5)]">
+                  <div className="w-12 h-12 sm:w-14 sm:h-14 bg-[#00f3ff]/30 rounded-full flex items-center justify-center animate-ping">
+                    <div className="w-8 h-8 sm:w-10 sm:h-10 bg-white rounded-full flex items-center justify-center">
+                       {/* Oynat İkonu (SVG) */}
+                       <svg className="w-4 h-4 sm:w-5 sm:h-5 text-black ml-1" fill="currentColor" viewBox="0 0 24 24">
+                          <path d="M8 5v14l11-7z" />
+                       </svg>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-black/60 px-6 py-2 rounded-full border border-zinc-800 backdrop-blur-md">
+                  <h1 className="text-lg sm:text-2xl font-black text-white tracking-[0.2em] drop-shadow-[0_0_10px_rgba(255,255,255,0.8)]">
+                    ELLER HAVAYA FM
+                  </h1>
+                  <p className="text-[10px] sm:text-xs text-[#00f3ff] tracking-widest mt-1 font-bold animate-pulse">
+                    CANLI YAYIN AKTİF
+                  </p>
+                </div>
               </div>
+
+              {/* Gece Modu Köşe Karartmaları (Vignette) */}
+              <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_transparent_30%,_black_100%)] pointer-events-none" />
 
             </div>
           </div>
