@@ -11,9 +11,13 @@ interface Spot {
 
 export default function Crowd() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  
+  // Veriler yüklendi mi? (Burası Canvas'a ne zaman çizeceğini söyleyecek)
+  const [isDataLoaded, setIsDataLoaded] = useState(false);
   const [liveSpots, setLiveSpots] = useState<Spot[]>([]);
   const [selectedSpot, setSelectedSpot] = useState<Spot | null>(null);
 
+  // 1. ADIM: VERİLERİ SUPABASE'DEN ÇEK
   useEffect(() => {
     const fetchSpots = async () => {
       const { data } = await supabase.from("spots").select("grid_index, message, location").limit(100);
@@ -24,6 +28,7 @@ export default function Crowd() {
         }));
         setLiveSpots(coloredData);
       }
+      setIsDataLoaded(true); // Veriler geldi! Artık çizebiliriz.
     };
     fetchSpots();
 
@@ -42,7 +47,10 @@ export default function Crowd() {
     return () => { supabase.removeChannel(subscription); };
   }, []);
 
+  // 2. ADIM: VERİLER GELDİKTEN SONRA CANVAS'I ÇİZ
   useEffect(() => {
+    if (!isDataLoaded) return; // Veriler gelmeden sakın çizme!
+
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext("2d", { alpha: false });
@@ -53,8 +61,10 @@ export default function Crowd() {
       return x - Math.floor(x);
     };
 
+    const isMobile = typeof window !== "undefined" && window.innerWidth < 768;
     const spotCount = 5000; 
     
+    // 🚀 DİKKAT: Artık bu dizi oluşturulurken liveSpots KESİN DOLU oluyor.
     const allSpots = Array.from({ length: spotCount }).map((_, index) => {
       const liveSpot = liveSpots.find(s => (s.grid_index % spotCount) === index);
       return {
@@ -71,9 +81,7 @@ export default function Crowd() {
     let animationFrameId: number;
     let currentHeroIndex = -1;
     let heroTimer = 0;
-    let heroDuration = 180; // 3 saniye havada kalır
-
-    const isMobile = typeof window !== "undefined" && window.innerWidth < 768;
+    let heroDuration = 180; 
 
     const drawCrowd = () => {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -95,19 +103,19 @@ export default function Crowd() {
 
          const isHero = index === currentHeroIndex && heroTimer > 0;
 
-         let baseSize = (isMobile ? 5 : 4) + (distance * 16); 
+         // 🚀 MOBİLDE EMOJİLER BÜYÜTÜLDÜ (Daha rahat görünmesi ve tıklanması için)
+         let baseSize = (isMobile ? 8 : 4) + (distance * 18); 
          let size = isHero ? baseSize * 2.5 : baseSize; 
 
          if (spot.isFilled) {
-            // 🚀 GERÇEK MESAJLAR ARTIK HER ZAMAN PARLIYOR (Fener Yok)
-            ctx.globalAlpha = isHero ? 1 : 0.8 + (distance * 0.2);
+            // GERÇEK MESAJLAR PARIL PARIL YANSIN
+            ctx.globalAlpha = isHero ? 1 : 0.85 + (distance * 0.15); // Her zaman çok parlak
             ctx.fillStyle = spot.color;
             ctx.font = `${size}px Arial`;
             
             const drawY = isHero ? py - 10 : py;
             ctx.fillText("🙌", px, drawY);
             
-            // Sadece Hero (Zıplayan) olduğunda mesaj kutusu açılır
             if (isHero) {
               const text = spot.message;
               const shortText = text.length > 20 ? text.substring(0, 20) + "..." : text;
@@ -128,7 +136,7 @@ export default function Crowd() {
               ctx.fillText(shortText, px - 10, boxY + 30);
             }
          } else {
-            // BOŞ SİLÜETLER (Sadece arka plan dekoru)
+            // BOŞ SİLÜETLER (Sadece Gri Noktalar)
             ctx.globalAlpha = isMobile ? 0.25 + (distance * 0.3) : 0.15 + (distance * 0.3);
             ctx.fillStyle = "#334155"; 
             ctx.beginPath();
@@ -151,7 +159,6 @@ export default function Crowd() {
       }
     };
 
-    // 🚀 TIKLAMA TESPİTİ
     const handleClick = (e: MouseEvent | TouchEvent) => {
       const rect = canvas.getBoundingClientRect();
       let cx = 0, cy = 0;
@@ -171,7 +178,7 @@ export default function Crowd() {
          const px = spot.x * rect.width;
          const py = spot.y * rect.height;
          const dist = Math.sqrt(Math.pow(px - cx, 2) + Math.pow(py - cy, 2));
-         return dist < (isMobile ? 40 : 25); // Dokunma alanı
+         return dist < (isMobile ? 50 : 30); 
       });
 
       if (clickedSpot) {
@@ -180,8 +187,6 @@ export default function Crowd() {
     };
 
     window.addEventListener("resize", resize);
-    
-    // Feneri sildiğimiz için sadece Tıklama Eventleri kaldı
     canvas.addEventListener("click", handleClick);
     canvas.addEventListener("touchend", handleClick);
     
@@ -194,13 +199,12 @@ export default function Crowd() {
       canvas.removeEventListener("touchend", handleClick);
       cancelAnimationFrame(animationFrameId);
     };
-  }, [liveSpots]);
+  }, [liveSpots, isDataLoaded]); // 🚀 KRİTİK NOKTA: Veri Geldiği An Kendini Yenile
 
   return (
     <>
       <canvas ref={canvasRef} className="w-full h-full cursor-pointer block" />
 
-      {/* 🌟 BÜYÜYEN MESAJ KARTI */}
       {selectedSpot && (
         <div 
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm cursor-pointer p-4"
@@ -213,9 +217,7 @@ export default function Crowd() {
           >
             <div className="absolute top-0 left-0 w-full h-2" style={{ backgroundColor: selectedSpot.color }} />
             <span className="text-4xl sm:text-5xl mb-4 block" style={{ textShadow: `0 0 20px ${selectedSpot.color}` }}>🙌</span>
-            
             <h3 className="text-lg sm:text-xl font-bold text-white mb-6 break-words">"{selectedSpot.message}"</h3>
-            
             <p className="text-xs sm:text-sm font-bold tracking-widest uppercase text-zinc-500 mb-6">
               📍 {selectedSpot.location || "GİZLİ KONUM"}
             </p>
