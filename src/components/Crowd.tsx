@@ -8,17 +8,19 @@ interface Spot {
   location: string;
 }
 
-// Yükselen animasyonların durumunu tutacak yapı
 interface ActiveAnimation {
-  index: number;
+  id: number;
   startTime: number;
 }
 
 export default function Crowd({ timeMode }: { timeMode: string }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [liveSpots, setLiveSpots] = useState<Spot[]>([]);
+  
+  // Yeni gelen mesajları anında tespit edip patlatmak için Ref
+  const newArrivalsRef = useRef<number[]>([]);
 
-  // Veri Çekme
+  // 1. VERİLERİ ÇEK VE CANLI DİNLE
   useEffect(() => {
     const fetchSpots = async () => {
       const { data } = await supabase.from("spots").select("grid_index, message, location").order('created_at', { ascending: false }).limit(200);
@@ -29,13 +31,16 @@ export default function Crowd({ timeMode }: { timeMode: string }) {
     const subscription = supabase
       .channel("live-spots")
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "spots" }, (payload) => {
-          setLiveSpots((current) => [payload.new as Spot, ...current]);
+          const newSpot = payload.new as Spot;
+          setLiveSpots((current) => [newSpot, ...current]);
+          // Yeni gelen mesajın ID'sini "Hemen Patlat" listesine ekle!
+          newArrivalsRef.current.push(newSpot.grid_index);
       }).subscribe();
 
     return () => { supabase.removeChannel(subscription); };
   }, []);
 
-  // Sanat Motoru
+  // 2. SANAT MOTORU (BOŞLUKSUZ GRID VE ANİMASYON)
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -43,152 +48,55 @@ export default function Crowd({ timeMode }: { timeMode: string }) {
     if (!ctx) return;
 
     const isDay = timeMode === "day";
-    const spotCount = typeof window !== "undefined" && window.innerWidth < 768 ? 2000 : 5000; 
+    const isMobile = typeof window !== "undefined" && window.innerWidth < 768;
 
-    const seededRandom = (seed: number) => {
-      const x = Math.sin(seed++) * 10000;
-      return x - Math.floor(x);
-    };
-    
-    const allSpots = Array.from({ length: spotCount }).map((_, index) => {
-      const liveSpot = liveSpots.find(s => (s.grid_index % spotCount) === index);
-      return {
-        x: seededRandom(index * 123.456), 
-        y: seededRandom(index * 987.654), 
-        isFilled: !!liveSpot, 
-        message: liveSpot ? liveSpot.message : "",
-        location: liveSpot ? liveSpot.location : "",
-      };
-    });
-
-    const filledIndices = allSpots.map((spot, i) => spot.isFilled ? i : -1).filter(i => i !== -1);
-
-    let animationFrameId: number;
+    let gridSpots: any[] = [];
     let activeAnimations: ActiveAnimation[] = [];
-    
-    // Animasyon Kuralları
-    const ANIMATION_DURATION = 5000; // 5 Saniye sürer
-    const FADE_IN_TIME = 1000; // İlk 1 saniye gri->sarı geçiş ve yükseliş
-    const FADE_OUT_TIME = 1000; // Son 1 saniye sarı->gri ve düşüş
+    let animationFrameId: number;
+    let randomTimer = 0;
 
-    // Yumuşak yükseliş matematiği (Ease Out)
-    const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
+    // 🧩 BOŞLUKSUZ PETEK (HEXAGONAL) DİZİLİMİ OLUŞTUR
+    const generateGrid = () => {
+      const spots = [];
+      let currentY = -20;
+      let row = 0;
 
-    // Rastgele Animasyon Tetikleyici
-    const triggerRandomAnimation = () => {
-      if (filledIndices.length === 0) return;
-      
-      // %10 ihtimalle "Rare Moment" (Aynı anda 2-3 tane kalkar)
-      const count = Math.random() > 0.9 ? Math.floor(Math.random() * 2) + 2 : 1;
+      while (currentY < canvas.height + 50) {
+        const distance = currentY / canvas.height; // 0 üst, 1 alt
+        const size = (isMobile ? 16 : 20) + (distance * 20); // Boyutlar
+        
+        // Emojiler arası boşlukları (X ve Y ekseninde) sıfıra yakın tutuyoruz
+        const spacingX = size * 0.9; 
+        const spacingY = size * 0.7; 
 
-      for(let i=0; i<count; i++) {
-        // Yeni mesajlara daha çok öncelik vermek için basit bir hile (dizi başındakiler yeni kabul edilir)
-        const rand = Math.random();
-        const skewedIndex = Math.floor(rand * rand * filledIndices.length); 
-        const indexToAnimate = filledIndices[skewedIndex];
+        let currentX = -20;
+        let col = 0;
+        
+        // Petek (çapraz) dizilim için her çift satırı yarım birim kaydır
+        if (row % 2 === 1) currentX -= spacingX / 2;
 
-        // Zaten animasyonda değilse ekle
-        if (!activeAnimations.find(a => a.index === indexToAnimate)) {
-          activeAnimations.push({ index: indexToAnimate, startTime: performance.now() });
+        while (currentX < canvas.width + 50) {
+          spots.push({
+            id: row * 1000 + col, // Benzersiz ID
+            x: currentX,
+            y: currentY,
+            baseSize: size,
+            distance: distance,
+            isFilled: false,
+            message: "",
+            location: "",
+            grid_index: 0
+          });
+          currentX += spacingX;
+          col++;
         }
+        currentY += spacingY;
+        row++;
       }
-
-      // Bir sonraki tetikleme 2 ile 5 saniye arası rastgele
-      setTimeout(triggerRandomAnimation, 2000 + Math.random() * 3000);
+      return spots;
     };
 
-    // İlk tetiklemeyi başlat
-    const timeoutId = setTimeout(triggerRandomAnimation, 2000);
-
-    const drawCrowd = (currentTime: number) => {
-      // Arkaplan Rengi (Gündüz/Gece)
-      ctx.fillStyle = isDay ? "#e2e2df" : "#0a0a0a";
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-      // Biten animasyonları temizle
-      activeAnimations = activeAnimations.filter(a => currentTime - a.startTime < ANIMATION_DURATION);
-
-      allSpots.forEach((spot, index) => {
-         const px = spot.x * canvas.width;
-         const py = spot.y * canvas.height;
-         const distance = spot.y; // 0 uzak, 1 yakın (2.5D derinlik hissi)
-         
-         const isMobile = window.innerWidth < 768;
-         const baseSize = (isMobile ? 6 : 4) + (distance * 14); 
-         
-         const activeAnim = activeAnimations.find(a => a.index === index);
-
-         if (activeAnim) {
-            // --- HAREKETLİ (YÜKSELEN) DURUM ---
-            const elapsed = currentTime - activeAnim.startTime;
-            let progress = 0;
-            let alpha = 1;
-            let glow = 0;
-
-            if (elapsed < FADE_IN_TIME) {
-              // Yükselme ve Sararma
-              progress = easeOutCubic(elapsed / FADE_IN_TIME);
-              glow = progress;
-              alpha = 0.3 + (0.7 * progress);
-            } else if (elapsed > ANIMATION_DURATION - FADE_OUT_TIME) {
-              // Düşme ve Griye Dönme
-              const outElapsed = elapsed - (ANIMATION_DURATION - FADE_OUT_TIME);
-              progress = 1 - easeOutCubic(outElapsed / FADE_OUT_TIME);
-              glow = progress;
-              alpha = 0.3 + (0.7 * progress);
-            } else {
-              // Havada asılı bekleme
-              progress = 1;
-              glow = 1;
-              alpha = 1;
-            }
-
-            const currentY = py - (progress * (isMobile ? 30 : 40)); // Havaya kalkma miktarı
-            const size = baseSize + (progress * (isMobile ? 15 : 10)); // Büyüme miktarı
-
-            // Glow ve Renk Efekti (Gri -> Neon Sarı)
-            ctx.globalAlpha = alpha;
-            ctx.font = `${size}px Arial`;
-            
-            // Eğer gündüzse sarı biraz daha koyu/turuncumsu olsun ki okunsun, geceyse neon sarı
-            const targetColor = isDay ? `rgba(230, 150, 0, ${glow})` : `rgba(255, 204, 0, ${glow})`;
-            ctx.fillStyle = glow > 0.1 ? targetColor : (isDay ? "#a1a1aa" : "#3f3f46");
-            
-            // Shadow (Glow) efekti sadece tepe noktasındayken tam çalışır
-            ctx.shadowColor = isDay ? "transparent" : "#ffcc00";
-            ctx.shadowBlur = glow * 15;
-            
-            ctx.fillText("🙌", px, currentY);
-            
-            // Mesajın Metni
-            if (glow > 0.5) {
-              ctx.shadowBlur = 0; // Yazılarda blur kapalı
-              ctx.fillStyle = isDay ? `rgba(0,0,0,${glow})` : `rgba(255,255,255,${glow})`;
-              
-              // Lokasyon
-              ctx.font = `bold ${isMobile ? 10 : 12}px Arial`;
-              ctx.fillText(`📍 ${spot.location || "Anonim"}`, px - 10, currentY - size - 10);
-              
-              // Mesaj
-              ctx.font = `${isMobile ? 12 : 14}px Arial`;
-              ctx.fillText(`"${spot.message}"`, px - 10, currentY - size + 5);
-            }
-            
-            ctx.shadowBlur = 0; // Sıfırla
-
-         } else {
-            // --- SAKİN (GRİ) DURUM ---
-            ctx.globalAlpha = isDay ? 0.4 + (distance * 0.3) : 0.1 + (distance * 0.2);
-            ctx.fillStyle = isDay ? "#a1a1aa" : "#27272a"; // Gündüz açık gri, Gece koyu antrasit
-            ctx.font = `${baseSize}px Arial`;
-            ctx.fillText("🙌", px, py);
-         }
-      });
-
-      animationFrameId = requestAnimationFrame(() => drawCrowd(performance.now()));
-    };
-
-    const resize = () => {
+    const setupCanvas = () => {
       const dpr = window.devicePixelRatio || 1;
       const rect = canvas.parentElement?.getBoundingClientRect();
       if(rect) {
@@ -198,18 +106,104 @@ export default function Crowd({ timeMode }: { timeMode: string }) {
         canvas.style.width = `${rect.width}px`;
         canvas.style.height = `${rect.height}px`;
       }
+      
+      // Ekran boyutuna göre halıyı baştan ör
+      gridSpots = generateGrid();
+
+      // Gerçek mesajları halıdaki rastgele (ama sabit) yerlere oturt
+      liveSpots.forEach(ls => {
+        const targetIndex = ls.grid_index % gridSpots.length;
+        gridSpots[targetIndex].isFilled = true;
+        gridSpots[targetIndex].message = ls.message;
+        gridSpots[targetIndex].location = ls.location;
+        gridSpots[targetIndex].grid_index = ls.grid_index;
+      });
     };
 
-    window.addEventListener("resize", resize);
-    resize();
-    drawCrowd(performance.now());
+    // Animasyon Ayarları
+    const ANIMATION_DURATION = 6000; // 6 saniye havada kalır
+    const FADE_IN = 1000;
+    const FADE_OUT = 1000;
+    const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
 
-    return () => {
-      window.removeEventListener("resize", resize);
-      clearTimeout(timeoutId);
-      cancelAnimationFrame(animationFrameId);
-    };
-  }, [liveSpots, timeMode]);
+    const drawCrowd = (currentTime: number) => {
+      // 1. ZEMİNİ BOYA
+      ctx.fillStyle = isDay ? "#e2e2df" : "#050505";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  return <canvas ref={canvasRef} className="w-full h-full block" />;
-}
+      // 2. YENİ GELEN MESAJLARI ANINDA FIRLAT
+      if (newArrivalsRef.current.length > 0) {
+        newArrivalsRef.current.forEach(newGridIndex => {
+          const targetSpot = gridSpots.find(s => s.grid_index === newGridIndex);
+          if (targetSpot && !activeAnimations.find(a => a.id === targetSpot.id)) {
+            activeAnimations.push({ id: targetSpot.id, startTime: currentTime });
+          }
+        });
+        newArrivalsRef.current = []; // Sıfırla
+      }
+
+      // 3. ESKİ MESAJLARI RASTGELE FIRLAT (4-5 saniyede bir, 2'li 3'lü)
+      if (currentTime > randomTimer) {
+        const filledSpots = gridSpots.filter(s => s.isFilled);
+        if (filledSpots.length > 0) {
+          const count = Math.random() > 0.8 ? 3 : (Math.random() > 0.4 ? 2 : 1); // Bazen 3, bazen 2, bazen 1 tane kalkar
+          for(let i=0; i<count; i++) {
+             const randomSpot = filledSpots[Math.floor(Math.random() * filledSpots.length)];
+             if (!activeAnimations.find(a => a.id === randomSpot.id)) {
+               activeAnimations.push({ id: randomSpot.id, startTime: currentTime });
+             }
+          }
+        }
+        randomTimer = currentTime + 3000 + (Math.random() * 3000); // 3 ile 6 sn arası bekle
+      }
+
+      // Süresi biten animasyonları temizle
+      activeAnimations = activeAnimations.filter(a => currentTime - a.startTime < ANIMATION_DURATION);
+
+      // 4. ÇİZİM: ÖNCE SESSİZ KALABALIK (Z-Index için ayırıyoruz)
+      const animatingIds = activeAnimations.map(a => a.id);
+      
+      gridSpots.forEach(spot => {
+         if (animatingIds.includes(spot.id)) return; // Animasyonluları sona bırak
+
+         ctx.globalAlpha = isDay ? 0.3 + (spot.distance * 0.2) : 0.15 + (spot.distance * 0.15);
+         ctx.fillStyle = isDay ? "#8f8f96" : "#27272a"; 
+         ctx.font = `${spot.baseSize}px Arial`;
+         ctx.fillText("🙌", spot.x, spot.y);
+      });
+
+      // 5. ÇİZİM: YÜKSELEN NEON MESAJLAR (En Üst Katman)
+      activeAnimations.forEach(anim => {
+         const spot = gridSpots.find(s => s.id === anim.id);
+         if (!spot) return;
+
+         const elapsed = currentTime - anim.startTime;
+         let progress = 0, glow = 0, alpha = 1;
+
+         if (elapsed < FADE_IN) {
+            progress = easeOutCubic(elapsed / FADE_IN);
+            glow = progress;
+            alpha = 0.2 + (0.8 * progress);
+         } else if (elapsed > ANIMATION_DURATION - FADE_OUT) {
+            const outElapsed = elapsed - (ANIMATION_DURATION - FADE_OUT);
+            progress = 1 - easeOutCubic(outElapsed / FADE_OUT);
+            glow = progress;
+            alpha = 0.2 + (0.8 * progress);
+         } else {
+            progress = 1; glow = 1; alpha = 1;
+         }
+
+         const currentY = spot.y - (progress * (isMobile ? 30 : 45)); // Havaya kalkma
+         const currentSize = spot.baseSize + (progress * 15); // Büyüme
+
+         // Emojiyi Çiz (Gri -> Sarı)
+         ctx.globalAlpha = alpha;
+         ctx.font = `${currentSize}px Arial`;
+         ctx.fillStyle = glow > 0.1 ? `rgba(255, 204, 0, ${glow})` : (isDay ? "#8f8f96" : "#27272a");
+         
+         ctx.shadowColor = isDay ? "transparent" : "#ffcc00";
+         ctx.shadowBlur = glow * 20;
+         ctx.fillText("🙌", spot.x, currentY);
+         ctx.shadowBlur = 0; // Kapat
+
+         // Mesaj Kutusu
