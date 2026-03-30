@@ -3,8 +3,9 @@
 import { useState } from "react";
 import { supabase } from "@/lib/supabase";
 import QRCode from "react-qr-code";
+import Link from "next/link"; // EKLENDİ: Sayfalar arası hızlı geçiş için
 
-// 🛑 OTOMATİK SANSÜR LİSTESİ (Genişletilebilir)
+// 🛑 OTOMATİK SANSÜR LİSTESİ
 const BAD_WORDS = [
   "amk", "aq", "amq", "sik", "sikerim", "siktir", "orospu", "piç", "pic",
   "yarrak", "yarak", "amcık", "amcik", "göt", "ibne", "yavşak", "yavsak",
@@ -17,11 +18,10 @@ export default function QrPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
 
-  // 🤖 SANSÜR MOTORU: Kötü kelimeleri *** yapar
+  // 🤖 SANSÜR MOTORU
   const censorText = (text: string) => {
     let censoredText = text;
     BAD_WORDS.forEach((word) => {
-      // Kelimenin büyük/küçük harf varyasyonlarını yakalar (gi)
       const regex = new RegExp(`\\b${word}\\b`, "gi");
       censoredText = censoredText.replace(regex, "***");
     });
@@ -34,7 +34,6 @@ export default function QrPage() {
 
     setIsSubmitting(true);
 
-    // Mesajı ve Lokasyonu Veritabanına Gitmeden Önce Sansürle
     const cleanMessage = censorText(message.trim());
     const cleanLocation = censorText(location.trim()) || "Gizli Konum";
 
@@ -44,8 +43,8 @@ export default function QrPage() {
       {
         grid_index: randomSpot,
         emoji_type: "🙌",
-        message: cleanMessage, // Sansürlü mesaj
-        location: cleanLocation, // Sansürlü lokasyon
+        message: cleanMessage,
+        location: cleanLocation,
       },
     ]);
 
@@ -53,9 +52,12 @@ export default function QrPage() {
 
     if (!error) {
       setIsSuccess(true);
-      setTimeout(() => setIsSuccess(false), 5000);
+      // Mesajı başarıyla attıktan sonra hemen sıfırlayalım ki form temizlensin
       setMessage("");
       setLocation("");
+      
+      // 5 saniye sonra başarı ekranı kapanır (kişi hala buradaysa)
+      setTimeout(() => setIsSuccess(false), 5000);
     }
   };
 
@@ -63,17 +65,34 @@ export default function QrPage() {
     <main className="min-h-screen bg-zinc-950 flex flex-col items-center justify-center p-4 font-sans text-white">
       <div className="max-w-md w-full space-y-8">
         
+        {/* LOGO KISMI (Artık Ana Sayfaya Tıklanabilir!) */}
         <div className="text-center space-y-2">
-          <h1 className="text-4xl font-black tracking-[0.2em] text-[#ffcc00]">ELLER HAVAYA</h1>
+          <Link href="/" className="inline-block hover:scale-105 transition-transform">
+            <h1 className="text-4xl font-black tracking-[0.2em] text-[#ffcc00] drop-shadow-[0_0_10px_rgba(255,204,0,0.3)]">
+              ELLER HAVAYA
+            </h1>
+          </Link>
           <p className="text-zinc-500 text-sm tracking-widest uppercase">Dijital Kalabalığa Karış</p>
         </div>
 
         <div className="bg-black border border-zinc-800 p-6 rounded-2xl shadow-2xl">
           {isSuccess ? (
-            <div className="text-center py-8 space-y-4">
-              <span className="text-5xl block animate-bounce">🙌</span>
-              <p className="text-[#ffcc00] font-bold tracking-widest">MESAJIN YAYINDA!</p>
-              <p className="text-sm text-zinc-500">Şimdi ana ekrana bak. Birazdan yükselecek...</p>
+            <div className="text-center py-8 space-y-6">
+              <div className="space-y-4">
+                <span className="text-5xl block animate-bounce">🙌</span>
+                <p className="text-[#ffcc00] font-bold tracking-widest">MESAJIN YAYINDA!</p>
+                <p className="text-sm text-zinc-500">Şimdi ana ekrana bak. Birazdan yükselecek...</p>
+              </div>
+              
+              {/* 🚀 ANA EKRANA GİT BUTONU */}
+              <div className="pt-2">
+                <Link 
+                  href="/" 
+                  className="inline-block w-full bg-zinc-800 text-white font-bold py-4 rounded-xl hover:bg-white hover:text-black transition-colors tracking-widest uppercase text-xs"
+                >
+                  ANA EKRANI İZLE
+                </Link>
+              </div>
             </div>
           ) : (
             <form onSubmit={handleCheckIn} className="space-y-6">
