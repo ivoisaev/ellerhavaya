@@ -13,19 +13,25 @@ export default function Home() {
     else setTimeMode("night");
   }, []);
 
+  // Gündüz ve Gece resimlerinin otomatik değişimi
+  const getBackgroundImage = () => {
+    return timeMode === "day" ? "url('/day-crowd.jpg')" : "url('/crowd-bg.jpg')";
+  };
+
   return (
     <main className="h-screen w-screen overflow-hidden relative bg-black">
       
-      {/* 📸 STATİK KALABALIK RESMİ (Gündüz tam parlak, Gece %30 parlak) */}
+      {/* 📸 DİNAMİK KALABALIK RESMİ */}
       <div 
         className="absolute inset-0 z-0 bg-cover bg-center bg-no-repeat transition-all duration-1000"
         style={{ 
-          backgroundImage: "url('/crowd-bg.jpg')",
-          filter: timeMode === "night" ? "brightness(0.3) contrast(1.2)" : "brightness(1) contrast(1)"
+          backgroundImage: getBackgroundImage(),
+          // Eğer gece resmi çok karanlıksa brightness'i 0.8 yapabilirsin, şimdilik lazerler parlasın diye 0.6 tutuyorum
+          filter: timeMode === "night" ? "brightness(0.6) contrast(1.2)" : "brightness(1) contrast(1)"
         }}
       />
 
-      {/* 🎨 ŞEFFAF CANVAS (Sadece Animasyonlar ve Lazerler Burada Çalışacak) */}
+      {/* 🎨 ŞEFFAF CANVAS (Sanat Motoru) */}
       <div className="absolute inset-0 z-10 pointer-events-none">
          <Crowd timeMode={timeMode} />
       </div>

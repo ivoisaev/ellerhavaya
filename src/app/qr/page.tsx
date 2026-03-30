@@ -4,25 +4,48 @@ import { useState } from "react";
 import { supabase } from "@/lib/supabase";
 import QRCode from "react-qr-code";
 
+// 🛑 OTOMATİK SANSÜR LİSTESİ (Genişletilebilir)
+const BAD_WORDS = [
+  "amk", "aq", "amq", "sik", "sikerim", "siktir", "orospu", "piç", "pic",
+  "yarrak", "yarak", "amcık", "amcik", "göt", "ibne", "yavşak", "yavsak",
+  "kahpe", "kaltak", "orosbu", "oç", "oc", "sokuk", "sokarım", "sikerler"
+];
+
 export default function QrPage() {
   const [message, setMessage] = useState("");
   const [location, setLocation] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
 
+  // 🤖 SANSÜR MOTORU: Kötü kelimeleri *** yapar
+  const censorText = (text: string) => {
+    let censoredText = text;
+    BAD_WORDS.forEach((word) => {
+      // Kelimenin büyük/küçük harf varyasyonlarını yakalar (gi)
+      const regex = new RegExp(`\\b${word}\\b`, "gi");
+      censoredText = censoredText.replace(regex, "***");
+    });
+    return censoredText;
+  };
+
   const handleCheckIn = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!message.trim()) return;
 
     setIsSubmitting(true);
+
+    // Mesajı ve Lokasyonu Veritabanına Gitmeden Önce Sansürle
+    const cleanMessage = censorText(message.trim());
+    const cleanLocation = censorText(location.trim()) || "Gizli Konum";
+
     const randomSpot = Math.floor(Math.random() * 100000) + 1;
 
     const { error } = await supabase.from("spots").insert([
       {
         grid_index: randomSpot,
         emoji_type: "🙌",
-        message: message.trim(),
-        location: location.trim() || "Gizli Konum",
+        message: cleanMessage, // Sansürlü mesaj
+        location: cleanLocation, // Sansürlü lokasyon
       },
     ]);
 
