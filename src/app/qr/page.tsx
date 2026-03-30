@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { supabase } from "@/lib/supabase";
+import QRCode from "react-qr-code";
 
 export default function QrPage() {
   const [message, setMessage] = useState("");
@@ -39,13 +40,11 @@ export default function QrPage() {
     <main className="min-h-screen bg-zinc-950 flex flex-col items-center justify-center p-4 font-sans text-white">
       <div className="max-w-md w-full space-y-8">
         
-        {/* BAŞLIK */}
         <div className="text-center space-y-2">
           <h1 className="text-4xl font-black tracking-[0.2em] text-[#ffcc00]">ELLER HAVAYA</h1>
           <p className="text-zinc-500 text-sm tracking-widest uppercase">Dijital Kalabalığa Karış</p>
         </div>
 
-        {/* MESAJ FORMU */}
         <div className="bg-black border border-zinc-800 p-6 rounded-2xl shadow-2xl">
           {isSuccess ? (
             <div className="text-center py-8 space-y-4">
@@ -83,10 +82,23 @@ export default function QrPage() {
           )}
         </div>
 
-        {/* STICKER SİPARİŞ KISMI */}
-        <div className="text-center pt-8 border-t border-zinc-900">
-          <p className="text-xs text-zinc-600 mb-4 tracking-widest">MEKANIN İÇİN ELLER HAVAYA QR STICKER'I İSTE</p>
-          <a href="mailto:iletisim@ellerhavaya.com" className="text-sm text-zinc-400 hover:text-[#ffcc00] underline underline-offset-4 transition">
+        {/* 🚀 QR KOD VE STICKER KISMI */}
+        <div className="text-center pt-8 border-t border-zinc-900 flex flex-col items-center">
+          <p className="text-xs text-zinc-500 mb-4 tracking-widest">SİTEYE GİDEN RESMİ QR KOD (Sticker İçin)</p>
+          
+          <div className="bg-white p-4 rounded-xl mb-4 shadow-[0_0_20px_rgba(255,204,0,0.2)]">
+            <QRCode 
+              value="https://ellerhavaya.com" 
+              size={120}
+              fgColor="#000000"
+              bgColor="#ffffff"
+            />
+          </div>
+
+          <p className="text-[10px] text-zinc-600 mb-4 tracking-widest max-w-[250px]">
+            MEKANIN İÇİN ELLER HAVAYA QR STICKER'I İSTİYORSAN BİZE ULAŞ
+          </p>
+          <a href="mailto:iletisim@ellerhavaya.com" className="text-sm text-[#ffcc00] hover:text-white underline underline-offset-4 transition">
             Sipariş Ver
           </a>
         </div>

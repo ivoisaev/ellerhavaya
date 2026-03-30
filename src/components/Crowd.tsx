@@ -13,7 +13,7 @@ interface ActiveAnimation {
   startTime: number;
 }
 
-interface GridSpot {
+interface AvatarSpot {
   id: number;
   x: number;
   y: number;
@@ -57,47 +57,57 @@ export default function Crowd({ timeMode }: { timeMode: string }) {
     const isDay = timeMode === "day";
     const isMobile = typeof window !== "undefined" && window.innerWidth < 768;
 
-    let gridSpots: GridSpot[] = [];
+    let spotsArray: AvatarSpot[] = [];
     let activeAnimations: ActiveAnimation[] = [];
     let animationFrameId: number;
     let randomTimer = 0;
 
-    const generateGrid = () => {
-      const spots: GridSpot[] = [];
-      let currentY = -20;
-      let row = 0;
+    // 👤 BİR İNSAN SİLÜETİ ÇİZME FONKSİYONU (Whatsapp tarzı)
+    const drawAvatar = (x: number, y: number, size: number, alpha: number) => {
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = isDay ? "#a1a1aa" : "#27272a"; // Gündüz gri, Gece koyu gri
+      
+      // Kafa
+      ctx.beginPath();
+      ctx.arc(x, y - size / 4, size / 3, 0, Math.PI * 2);
+      ctx.fill();
+      
+      // Omuzlar (Yarım Daire)
+      ctx.beginPath();
+      ctx.arc(x, y + size / 2, size / 1.5, Math.PI, 0);
+      ctx.fill();
+    };
 
-      while (currentY < canvas.height + 50) {
-        const distance = currentY / canvas.height; 
-        const size = (isMobile ? 16 : 20) + (distance * 20); 
-        
-        const spacingX = size * 0.9; 
-        const spacingY = size * 0.7; 
+    const generateSpots = () => {
+      const spots: AvatarSpot[] = [];
+      const count = isMobile ? 3000 : 7000; // Rastgele dağınık kitle
+      
+      const seededRandom = (seed: number) => {
+        const x = Math.sin(seed++) * 10000;
+        return x - Math.floor(x);
+      };
 
-        let currentX = -20;
-        let col = 0;
-        
-        if (row % 2 === 1) currentX -= spacingX / 2;
+      for(let i = 0; i < count; i++) {
+        const px = seededRandom(i * 123) * (canvas.width + 100) - 50;
+        const py = seededRandom(i * 987) * (canvas.height + 100) - 50;
+        const distance = py / canvas.height;
+        const size = (isMobile ? 12 : 16) + (distance * 24);
 
-        while (currentX < canvas.width + 50) {
-          spots.push({
-            id: row * 1000 + col,
-            x: currentX,
-            y: currentY,
-            baseSize: size,
-            distance: distance,
-            isFilled: false,
-            message: "",
-            location: "",
-            grid_index: 0
-          });
-          currentX += spacingX;
-          col++;
-        }
-        currentY += spacingY;
-        row++;
+        spots.push({
+          id: i,
+          x: px,
+          y: py,
+          baseSize: size,
+          distance: distance,
+          isFilled: false,
+          message: "",
+          location: "",
+          grid_index: i
+        });
       }
-      return spots;
+
+      // 3D Hissi için: Y ekseninde (Aşağıdan yukarı) sırala ki arkadakiler öndekilerin altında kalsın
+      return spots.sort((a, b) => a.y - b.y);
     };
 
     const setupCanvas = () => {
@@ -107,20 +117,19 @@ export default function Crowd({ timeMode }: { timeMode: string }) {
         canvas.width = rect.width * dpr;
         canvas.height = rect.height * dpr;
         ctx.scale(dpr, dpr);
-        canvas.style.width = `${rect.width}px`;
-        canvas.style.height = `${rect.height}px`;
       }
       
-      gridSpots = generateGrid();
+      spotsArray = generateSpots();
 
+      // Gerçek mesajları rastgele insan silüetlerinin içine gizle
       liveSpots.forEach(ls => {
-        if (gridSpots.length > 0) {
-          const targetIndex = ls.grid_index % gridSpots.length;
-          if (gridSpots[targetIndex]) {
-            gridSpots[targetIndex].isFilled = true;
-            gridSpots[targetIndex].message = ls.message;
-            gridSpots[targetIndex].location = ls.location;
-            gridSpots[targetIndex].grid_index = ls.grid_index;
+        if (spotsArray.length > 0) {
+          const targetIndex = ls.grid_index % spotsArray.length;
+          if (spotsArray[targetIndex]) {
+            spotsArray[targetIndex].isFilled = true;
+            spotsArray[targetIndex].message = ls.message;
+            spotsArray[targetIndex].location = ls.location;
+            spotsArray[targetIndex].grid_index = ls.grid_index;
           }
         }
       });
@@ -132,12 +141,13 @@ export default function Crowd({ timeMode }: { timeMode: string }) {
     const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
 
     const drawCrowd = (currentTime: number) => {
-      ctx.fillStyle = isDay ? "#e2e2df" : "#050505";
+      ctx.fillStyle = isDay ? "#f4f4f5" : "#050505"; 
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
+      // Yeni Gelenleri Patlat
       if (newArrivalsRef.current.length > 0) {
         newArrivalsRef.current.forEach(newGridIndex => {
-          const targetSpot = gridSpots.find(s => s.grid_index === newGridIndex);
+          const targetSpot = spotsArray.find(s => s.grid_index === newGridIndex);
           if (targetSpot && !activeAnimations.find(a => a.id === targetSpot.id)) {
             activeAnimations.push({ id: targetSpot.id, startTime: currentTime });
           }
@@ -145,8 +155,9 @@ export default function Crowd({ timeMode }: { timeMode: string }) {
         newArrivalsRef.current = []; 
       }
 
+      // Rastgele Eskileri Patlat
       if (currentTime > randomTimer) {
-        const filledSpots = gridSpots.filter(s => s.isFilled);
+        const filledSpots = spotsArray.filter(s => s.isFilled);
         if (filledSpots.length > 0) {
           const count = Math.random() > 0.8 ? 3 : (Math.random() > 0.4 ? 2 : 1); 
           for(let i=0; i<count; i++) {
@@ -156,24 +167,23 @@ export default function Crowd({ timeMode }: { timeMode: string }) {
              }
           }
         }
-        randomTimer = currentTime + 3000 + (Math.random() * 3000); 
+        randomTimer = currentTime + 3000 + (Math.random() * 4000); 
       }
 
       activeAnimations = activeAnimations.filter(a => currentTime - a.startTime < ANIMATION_DURATION);
-
       const animatingIds = activeAnimations.map(a => a.id);
       
-      gridSpots.forEach(spot => {
+      // 1. ÖNCE SESSİZ İNSANLARI (AVATARLARI) ÇİZ
+      spotsArray.forEach(spot => {
          if (animatingIds.includes(spot.id)) return; 
-
-         ctx.globalAlpha = isDay ? 0.3 + (spot.distance * 0.2) : 0.15 + (spot.distance * 0.15);
-         ctx.fillStyle = isDay ? "#8f8f96" : "#27272a"; 
-         ctx.font = `${spot.baseSize}px Arial`;
-         ctx.fillText("🙌", spot.x, spot.y);
+         
+         const alpha = isDay ? 0.4 + (spot.distance * 0.3) : 0.2 + (spot.distance * 0.3);
+         drawAvatar(spot.x, spot.y, spot.baseSize, alpha);
       });
 
+      // 2. SONRA ELLERİNİ KALDIRAN MESAJLARI ÇİZ
       activeAnimations.forEach(anim => {
-         const spot = gridSpots.find(s => s.id === anim.id);
+         const spot = spotsArray.find(s => s.id === anim.id);
          if (!spot) return;
 
          const elapsed = currentTime - anim.startTime;
@@ -182,45 +192,50 @@ export default function Crowd({ timeMode }: { timeMode: string }) {
          if (elapsed < FADE_IN) {
             progress = easeOutCubic(elapsed / FADE_IN);
             glow = progress;
-            alpha = 0.2 + (0.8 * progress);
+            alpha = progress; 
          } else if (elapsed > ANIMATION_DURATION - FADE_OUT) {
             const outElapsed = elapsed - (ANIMATION_DURATION - FADE_OUT);
             progress = 1 - easeOutCubic(outElapsed / FADE_OUT);
             glow = progress;
-            alpha = 0.2 + (0.8 * progress);
+            alpha = progress; 
          } else {
             progress = 1; glow = 1; alpha = 1;
          }
 
-         const currentY = spot.y - (progress * (isMobile ? 30 : 45)); 
+         const currentY = spot.y - (progress * (isMobile ? 30 : 40)); 
          const currentSize = spot.baseSize + (progress * 15); 
 
          ctx.globalAlpha = alpha;
-         ctx.font = `${currentSize}px Arial`;
-         ctx.fillStyle = glow > 0.1 ? `rgba(255, 204, 0, ${glow})` : (isDay ? "#8f8f96" : "#27272a");
          
          ctx.shadowColor = isDay ? "transparent" : "#ffcc00";
          ctx.shadowBlur = glow * 20;
-         ctx.fillText("🙌", spot.x, currentY);
+         
+         // Sadece bu kişi ayağa kalkıp ellerini kaldırır!
+         ctx.font = `${currentSize}px Arial`;
+         ctx.fillText("🙌", spot.x - currentSize/2, currentY + currentSize/3);
          ctx.shadowBlur = 0; 
 
+         // Mesaj Kutusu
          if (glow > 0.5) {
             const boxY = currentY - currentSize - 35;
             
-            ctx.fillStyle = isDay ? "rgba(255,255,255,0.7)" : "rgba(0,0,0,0.8)";
-            ctx.fillRect(spot.x - 10, boxY, 180, 35);
+            ctx.fillStyle = isDay ? "rgba(255,255,255,0.85)" : "rgba(0,0,0,0.85)";
+            ctx.fillRect(spot.x - 90, boxY, 180, 35);
             ctx.strokeStyle = `rgba(255, 204, 0, ${glow})`;
             ctx.lineWidth = 1;
-            ctx.strokeRect(spot.x - 10, boxY, 180, 35);
+            ctx.strokeRect(spot.x - 90, boxY, 180, 35);
 
             ctx.fillStyle = isDay ? "#52525b" : "#a1a1aa"; 
-            ctx.font = `bold ${isMobile ? 9 : 10}px Arial`;
-            ctx.fillText(`📍 ${spot.location || "Anonim"}`, spot.x - 5, boxY + 14);
+            ctx.font = `bold 10px Arial`;
+            ctx.textAlign = "center"; // Yazıyı ortala
+            ctx.fillText(`📍 ${spot.location || "Anonim"}`, spot.x, boxY + 14);
 
             ctx.fillStyle = isDay ? "#000000" : "#ffffff";
-            ctx.font = `bold ${isMobile ? 11 : 13}px Arial`;
-            const shortText = spot.message.length > 22 ? spot.message.substring(0, 22) + "..." : spot.message;
-            ctx.fillText(shortText, spot.x - 5, boxY + 28);
+            ctx.font = `bold 13px Arial`;
+            const shortText = spot.message.length > 25 ? spot.message.substring(0, 25) + "..." : spot.message;
+            ctx.fillText(`"${shortText}"`, spot.x, boxY + 28);
+            
+            ctx.textAlign = "left"; // Düzeni geri al
          }
       });
 
@@ -229,7 +244,7 @@ export default function Crowd({ timeMode }: { timeMode: string }) {
 
     window.addEventListener("resize", setupCanvas);
     setupCanvas();
-    animationFrameId = requestAnimationFrame(drawCrowd);
+    drawCrowd(performance.now());
 
     return () => {
       window.removeEventListener("resize", setupCanvas);
