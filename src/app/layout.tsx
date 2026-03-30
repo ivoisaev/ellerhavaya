@@ -12,9 +12,9 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-export const metadata: Metadata = {
-  title: "ELLER HAVAYA 🙌",
-  description: "Burada yalnız değilsin. Ellerini kaldır ve kalabalığa karış.",
+export const metadata = {
+  title: "Eller Havaya 🙌 | A Digital Art Installation by Ivo Isaev",
+  description: "Yaşayan bir dijital insanlık tablosu. Mekanlardaki gizli seslerin görselleştiği interaktif internet sanatı.",
 };
 
 export default function RootLayout({
