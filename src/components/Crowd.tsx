@@ -13,12 +13,12 @@ interface ActiveAnimation {
   startTime: number;
 }
 
-interface AvatarSpot {
+// Artık sadece "sanal" noktalar. Çizilmeyecekler, sadece animasyonun çıkacağı koordinatları tutacaklar.
+interface VirtualSpot {
   id: number;
   x: number;
   y: number;
   baseSize: number;
-  distance: number;
   isFilled: boolean;
   message: string;
   location: string;
@@ -32,11 +32,7 @@ export default function Crowd({ timeMode }: { timeMode: string }) {
 
   useEffect(() => {
     const fetchSpots = async () => {
-      const { data } = await supabase
-        .from("spots")
-        .select("grid_index, message, location")
-        .order("created_at", { ascending: false })
-        .limit(200);
+      const { data } = await supabase.from("spots").select("grid_index, message, location").order('created_at', { ascending: false }).limit(200);
       if (data) setLiveSpots(data);
     };
     fetchSpots();
@@ -44,129 +40,92 @@ export default function Crowd({ timeMode }: { timeMode: string }) {
     const subscription = supabase
       .channel("live-spots")
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "spots" }, (payload) => {
-        const newSpot = payload.new as Spot;
-        setLiveSpots((current) => [newSpot, ...current]);
-        newArrivalsRef.current.push(newSpot.grid_index);
-      })
-      .subscribe();
+          const newSpot = payload.new as Spot;
+          setLiveSpots((current) => [newSpot, ...current]);
+          newArrivalsRef.current.push(newSpot.grid_index);
+      }).subscribe();
 
-    return () => {
-      supabase.removeChannel(subscription);
-    };
+    return () => { supabase.removeChannel(subscription); };
   }, []);
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const ctx = canvas.getContext("2d", { alpha: false });
+    const ctx = canvas.getContext("2d", { alpha: true }); // ARTIK ŞEFFAF!
     if (!ctx) return;
 
     const isDay = timeMode === "day";
     const isMobile = typeof window !== "undefined" && window.innerWidth < 768;
 
-    let spotsArray: AvatarSpot[] = [];
+    let spotsArray: VirtualSpot[] = [];
     let activeAnimations: ActiveAnimation[] = [];
     let animationFrameId: number;
     let randomTimer = 0;
 
-    // 👤 BİR İNSAN SİLÜETİ ÇİZME (Daha zarif ve küçük)
-    const drawAvatar = (x: number, y: number, size: number, alpha: number) => {
-      ctx.globalAlpha = alpha;
-      // Gündüz: Çok açık gri (ferah), Gece: Zifiri karanlıkta parlayan antrasit
-      ctx.fillStyle = isDay ? "#a1a1aa" : "#18181b"; 
-
-      // Kafa
-      ctx.beginPath();
-      ctx.arc(x, y - size / 3, size / 2.5, 0, Math.PI * 2);
-      ctx.fill();
-
-      // Omuzlar
-      ctx.beginPath();
-      ctx.arc(x, y + size / 2.5, size / 1.2, Math.PI, 0);
-      ctx.fill();
-    };
-
-    // 🎇 GECE KULÜBÜ IŞIKLARI (Lazer/Spotlight Efekti)
+    // 🎇 GECE KULÜBÜ IŞIKLARI (Lazer/Spotlight)
     const drawClubLights = (width: number, height: number, time: number) => {
-      ctx.globalCompositeOperation = "screen"; // Işıkların birleşip parlaması için
+      ctx.globalCompositeOperation = "screen"; 
       const t = time * 0.0005;
 
       // 1. Işık: Magenta
       const x1 = width * 0.5 + Math.sin(t) * width * 0.4;
       const y1 = height * 0.5 + Math.cos(t * 1.3) * height * 0.4;
-      const grad1 = ctx.createRadialGradient(x1, y1, 0, x1, y1, width * 0.5);
-      grad1.addColorStop(0, "rgba(255, 0, 150, 0.15)"); // Parlak merkez
+      const grad1 = ctx.createRadialGradient(x1, y1, 0, x1, y1, width * 0.6);
+      grad1.addColorStop(0, "rgba(255, 0, 150, 0.2)"); 
       grad1.addColorStop(1, "rgba(255, 0, 150, 0)");
       ctx.fillStyle = grad1;
-      ctx.beginPath(); ctx.arc(x1, y1, width * 0.5, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(x1, y1, width * 0.6, 0, Math.PI * 2); ctx.fill();
 
       // 2. Işık: Cyan
       const x2 = width * 0.5 + Math.cos(t * 0.8) * width * 0.4;
       const y2 = height * 0.5 + Math.sin(t * 1.1) * height * 0.4;
-      const grad2 = ctx.createRadialGradient(x2, y2, 0, x2, y2, width * 0.5);
-      grad2.addColorStop(0, "rgba(0, 255, 255, 0.15)");
+      const grad2 = ctx.createRadialGradient(x2, y2, 0, x2, y2, width * 0.6);
+      grad2.addColorStop(0, "rgba(0, 255, 255, 0.2)");
       grad2.addColorStop(1, "rgba(0, 255, 255, 0)");
       ctx.fillStyle = grad2;
-      ctx.beginPath(); ctx.arc(x2, y2, width * 0.5, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(x2, y2, width * 0.6, 0, Math.PI * 2); ctx.fill();
 
-      ctx.globalCompositeOperation = "source-over"; // Normale döndür
+      ctx.globalCompositeOperation = "source-over"; 
     };
 
-    const generateSpots = (width: number, height: number) => {
-      const spots: AvatarSpot[] = [];
-      // Silüetleri daha seyrek yapmak için aralıkları açıyoruz
-      const spacingX = isMobile ? 30 : 45; 
-      const spacingY = isMobile ? 25 : 35;
-      
-      const cols = Math.floor(width / spacingX) + 2;
-      const rows = Math.floor(height / spacingY) + 2;
+    // Sanal Koordinat Haritası (Ekranda görünmezler, sadece emojilerin çıkacağı yerleri belirler)
+    const generateVirtualSpots = (width: number, height: number) => {
+      const spots: VirtualSpot[] = [];
+      const count = isMobile ? 1000 : 3000; 
 
-      let idCounter = 0;
+      for(let i = 0; i < count; i++) {
+        const px = Math.random() * width;
+        const py = Math.random() * height;
+        const distance = py / height; // Derinlik algısı (aşağıdakiler daha büyük)
+        const size = (isMobile ? 20 : 25) + (distance * 15);
 
-      for (let r = -1; r < rows; r++) {
-        for (let c = -1; c < cols; c++) {
-          // Askeri düzeni kırmak için rastgele kayma (jitter)
-          const jitterX = (Math.random() - 0.5) * (spacingX * 0.6);
-          const jitterY = (Math.random() - 0.5) * (spacingY * 0.6);
-
-          const px = (c * spacingX) + jitterX;
-          const py = (r * spacingY) + jitterY;
-
-          const distance = py / height;
-          // Boyutları çok küçülttük ki kalabalık net görünsün
-          const size = (isMobile ? 5 : 7) + (distance * 10);
-
-          spots.push({
-            id: idCounter++,
-            x: px,
-            y: py,
-            baseSize: size,
-            distance: Math.max(0, Math.min(1, distance)),
-            isFilled: false,
-            message: "",
-            location: "",
-            grid_index: idCounter
-          });
-        }
+        spots.push({
+          id: i,
+          x: px,
+          y: py,
+          baseSize: size,
+          isFilled: false,
+          message: "",
+          location: "",
+          grid_index: i
+        });
       }
-
-      // Y ekseninde (Aşağıdan yukarı) sırala (3D derinlik için kritik)
-      return spots.sort((a, b) => a.y - b.y);
+      return spots.sort((a, b) => a.y - b.y); // Önce arkadakiler (Y ekseni sıralaması)
     };
 
     const setupCanvas = () => {
       const dpr = window.devicePixelRatio || 1;
       const rect = canvas.parentElement?.getBoundingClientRect();
-      if (rect) {
+      if(rect) {
         canvas.width = rect.width * dpr;
         canvas.height = rect.height * dpr;
         ctx.scale(dpr, dpr);
       }
+      
+      spotsArray = generateVirtualSpots(rect?.width || window.innerWidth, rect?.height || window.innerHeight);
 
-      spotsArray = generateSpots(rect?.width || window.innerWidth, rect?.height || window.innerHeight);
-
-      // Veritabanından gelen gerçek mesajları yerleştir
-      liveSpots.forEach((ls) => {
+      // Veritabanı mesajlarını sanal noktalara bağla
+      liveSpots.forEach(ls => {
         if (spotsArray.length > 0) {
           const targetIndex = ls.grid_index % spotsArray.length;
           if (spotsArray[targetIndex]) {
@@ -179,116 +138,107 @@ export default function Crowd({ timeMode }: { timeMode: string }) {
       });
     };
 
-    const ANIMATION_DURATION = 6000;
-    const FADE_IN = 1000;
-    const FADE_OUT = 1000;
+    const ANIMATION_DURATION = 6000; 
+    const FADE_IN = 800;
+    const FADE_OUT = 800;
     const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
 
     const drawCrowd = (currentTime: number) => {
-      // Gündüz: Çok ferah beyazımsı gri / Gece: Zifiri siyah (Kulüp ortamı)
-      ctx.fillStyle = isDay ? "#f4f4f5" : "#000000";
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      // 1. CANVAS'I TAMAMEN TEMİZLE (Arkada resim görünsün)
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      // EĞER GECEYSE LAZERLERİ/IŞIKLARI ÇİZ
+      // 2. GECEYSE LAZERLERİ ÇİZ
       if (!isDay) {
         drawClubLights(canvas.width / (window.devicePixelRatio || 1), canvas.height / (window.devicePixelRatio || 1), currentTime);
       }
 
-      // Animasyon Tetikleyicileri (Yeni Gelenler & Rastgeleler)
+      // Animasyon Tetikleyicileri
       if (newArrivalsRef.current.length > 0) {
-        newArrivalsRef.current.forEach((newGridIndex) => {
-          const targetSpot = spotsArray.find((s) => s.grid_index === newGridIndex);
-          if (targetSpot && !activeAnimations.find((a) => a.id === targetSpot.id)) {
+        newArrivalsRef.current.forEach(newGridIndex => {
+          const targetSpot = spotsArray.find(s => s.grid_index === newGridIndex);
+          if (targetSpot && !activeAnimations.find(a => a.id === targetSpot.id)) {
             activeAnimations.push({ id: targetSpot.id, startTime: currentTime });
           }
         });
-        newArrivalsRef.current = [];
+        newArrivalsRef.current = []; 
       }
 
       if (currentTime > randomTimer) {
-        const filledSpots = spotsArray.filter((s) => s.isFilled);
+        const filledSpots = spotsArray.filter(s => s.isFilled);
         if (filledSpots.length > 0) {
-          const count = Math.random() > 0.8 ? 3 : Math.random() > 0.4 ? 2 : 1;
-          for (let i = 0; i < count; i++) {
-            const randomSpot = filledSpots[Math.floor(Math.random() * filledSpots.length)];
-            if (!activeAnimations.find((a) => a.id === randomSpot.id)) {
-              activeAnimations.push({ id: randomSpot.id, startTime: currentTime });
-            }
+          const count = Math.random() > 0.8 ? 3 : (Math.random() > 0.4 ? 2 : 1); 
+          for(let i=0; i<count; i++) {
+             const randomSpot = filledSpots[Math.floor(Math.random() * filledSpots.length)];
+             if (!activeAnimations.find(a => a.id === randomSpot.id)) {
+               activeAnimations.push({ id: randomSpot.id, startTime: currentTime });
+             }
           }
         }
-        randomTimer = currentTime + 3000 + Math.random() * 4000;
+        randomTimer = currentTime + 3000 + (Math.random() * 4000); 
       }
 
-      activeAnimations = activeAnimations.filter((a) => currentTime - a.startTime < ANIMATION_DURATION);
-      const animatingIds = activeAnimations.map((a) => a.id);
+      activeAnimations = activeAnimations.filter(a => currentTime - a.startTime < ANIMATION_DURATION);
 
-      // 1. ÖNCE SESSİZ İNSANLARI (AVATARLARI) ÇİZ
-      spotsArray.forEach((spot) => {
-        if (animatingIds.includes(spot.id)) return;
+      // 3. SADECE ELLERİNİ KALDIRAN MESAJLARI ÇİZ (Avatar silüeti yok, sihir tam burada!)
+      activeAnimations.forEach(anim => {
+         const spot = spotsArray.find(s => s.id === anim.id);
+         if (!spot) return;
 
-        // Saydamlığı ayarladık. Arka planla daha iyi kaynaşıyorlar.
-        const alpha = isDay ? 0.3 + spot.distance * 0.4 : 0.4 + spot.distance * 0.5;
-        drawAvatar(spot.x, spot.y, spot.baseSize, alpha);
-      });
+         const elapsed = currentTime - anim.startTime;
+         let progress = 0, glow = 0, alpha = 1;
 
-      // 2. SONRA ELLERİNİ KALDIRAN MESAJLARI ÇİZ
-      activeAnimations.forEach((anim) => {
-        const spot = spotsArray.find((s) => s.id === anim.id);
-        if (!spot) return;
+         if (elapsed < FADE_IN) {
+            progress = easeOutCubic(elapsed / FADE_IN);
+            glow = progress; alpha = progress; 
+         } else if (elapsed > ANIMATION_DURATION - FADE_OUT) {
+            const outElapsed = elapsed - (ANIMATION_DURATION - FADE_OUT);
+            progress = 1 - easeOutCubic(outElapsed / FADE_OUT);
+            glow = progress; alpha = progress; 
+         } else {
+            progress = 1; glow = 1; alpha = 1;
+         }
 
-        const elapsed = currentTime - anim.startTime;
-        let progress = 0, glow = 0, alpha = 1;
+         const currentY = spot.y - (progress * (isMobile ? 30 : 50)); 
+         const currentSize = spot.baseSize + (progress * 15); 
 
-        if (elapsed < FADE_IN) {
-          progress = easeOutCubic(elapsed / FADE_IN);
-          glow = progress;
-          alpha = progress;
-        } else if (elapsed > ANIMATION_DURATION - FADE_OUT) {
-          const outElapsed = elapsed - (ANIMATION_DURATION - FADE_OUT);
-          progress = 1 - easeOutCubic(outElapsed / FADE_OUT);
-          glow = progress;
-          alpha = progress;
-        } else {
-          progress = 1; glow = 1; alpha = 1;
-        }
+         ctx.globalAlpha = alpha;
+         
+         // Zıplayan kişinin emojisi (Sanki fotoğraftan fırlamış gibi)
+         ctx.font = `${currentSize}px Arial`;
+         ctx.shadowColor = isDay ? "rgba(0,0,0,0.3)" : "rgba(255, 204, 0, 0.8)";
+         ctx.shadowBlur = isDay ? 10 : glow * 25;
+         ctx.fillText("🙌", spot.x - currentSize/2, currentY + currentSize/3);
+         ctx.shadowBlur = 0; 
 
-        const currentY = spot.y - progress * (isMobile ? 30 : 50);
-        const currentSize = spot.baseSize + progress * (isMobile ? 18 : 24);
+         // Mesaj Kutusu
+         if (glow > 0.5) {
+            const boxY = currentY - currentSize - 35;
+            
+            ctx.fillStyle = isDay ? "rgba(255, 255, 255, 0.95)" : "rgba(10, 10, 10, 0.95)";
+            ctx.beginPath();
+            ctx.roundRect(spot.x - 100, boxY, 200, 42, 10);
+            ctx.fill();
 
-        ctx.globalAlpha = alpha;
+            // Kutuya gölge eklendi (Fotoğrafın üzerinde havada dursun diye)
+            ctx.shadowColor = "rgba(0,0,0,0.5)";
+            ctx.shadowBlur = 15;
+            ctx.strokeStyle = `rgba(255, 204, 0, ${glow})`;
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+            ctx.shadowBlur = 0; // Gölgeyi diğer çizimlere bulaşmasın diye sıfırla
 
-        // Zıplayan kişinin fontu ve emojisi
-        ctx.font = `${currentSize}px Arial`;
-        ctx.shadowColor = isDay ? "transparent" : "rgba(255, 204, 0, 0.8)";
-        ctx.shadowBlur = isDay ? 0 : glow * 25;
-        ctx.fillText("🙌", spot.x - currentSize / 2, currentY + currentSize / 3);
-        ctx.shadowBlur = 0;
+            ctx.fillStyle = isDay ? "#71717a" : "#a1a1aa"; 
+            ctx.font = `bold 10px sans-serif`;
+            ctx.textAlign = "center";
+            ctx.fillText(`📍 ${spot.location || "Anonim"}`, spot.x, boxY + 14);
 
-        // Mesaj Kutusu
-        if (glow > 0.5) {
-          const boxY = currentY - currentSize - 35;
-
-          ctx.fillStyle = isDay ? "rgba(255, 255, 255, 0.95)" : "rgba(10, 10, 10, 0.95)";
-          ctx.beginPath();
-          ctx.roundRect(spot.x - 100, boxY, 200, 40, 8); // roundRect ile modern köşeler
-          ctx.fill();
-
-          ctx.strokeStyle = `rgba(255, 204, 0, ${glow})`;
-          ctx.lineWidth = 1.5;
-          ctx.stroke();
-
-          ctx.fillStyle = isDay ? "#71717a" : "#a1a1aa";
-          ctx.font = `bold 10px sans-serif`;
-          ctx.textAlign = "center";
-          ctx.fillText(`📍 ${spot.location || "Anonim"}`, spot.x, boxY + 14);
-
-          ctx.fillStyle = isDay ? "#000000" : "#ffffff";
-          ctx.font = `bold 13px sans-serif`;
-          const shortText = spot.message.length > 25 ? spot.message.substring(0, 25) + "..." : spot.message;
-          ctx.fillText(`"${shortText}"`, spot.x, boxY + 30);
-
-          ctx.textAlign = "left"; // Düzeni geri al
-        }
+            ctx.fillStyle = isDay ? "#000000" : "#ffffff";
+            ctx.font = `bold 13px sans-serif`;
+            const shortText = spot.message.length > 25 ? spot.message.substring(0, 25) + "..." : spot.message;
+            ctx.fillText(`"${shortText}"`, spot.x, boxY + 30);
+            
+            ctx.textAlign = "left"; 
+         }
       });
 
       animationFrameId = requestAnimationFrame(drawCrowd);
@@ -304,5 +254,5 @@ export default function Crowd({ timeMode }: { timeMode: string }) {
     };
   }, [liveSpots, timeMode]);
 
-  return <canvas ref={canvasRef} className="w-full h-full block pointer-events-none" />;
+  return <canvas ref={canvasRef} className="w-full h-full block" />;
 }
