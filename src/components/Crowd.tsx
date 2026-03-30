@@ -6,61 +6,49 @@ interface Spot {
   grid_index: number;
   message: string;
   location: string;
-  color: string;
 }
 
-export default function Crowd() {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [isDataLoaded, setIsDataLoaded] = useState(false);
-  const [liveSpots, setLiveSpots] = useState<Spot[]>([]);
-  const [selectedSpot, setSelectedSpot] = useState<Spot | null>(null);
+// Yükselen animasyonların durumunu tutacak yapı
+interface ActiveAnimation {
+  index: number;
+  startTime: number;
+}
 
+export default function Crowd({ timeMode }: { timeMode: string }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [liveSpots, setLiveSpots] = useState<Spot[]>([]);
+
+  // Veri Çekme
   useEffect(() => {
     const fetchSpots = async () => {
-      const { data } = await supabase.from("spots").select("grid_index, message, location").limit(100);
-      if (data) {
-        const coloredData = data.map(spot => ({
-          ...spot,
-          color: Math.random() > 0.5 ? "#ff007f" : "#00f3ff"
-        }));
-        setLiveSpots(coloredData);
-      }
-      setIsDataLoaded(true);
+      const { data } = await supabase.from("spots").select("grid_index, message, location").order('created_at', { ascending: false }).limit(200);
+      if (data) setLiveSpots(data);
     };
     fetchSpots();
 
     const subscription = supabase
       .channel("live-spots")
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "spots" }, (payload) => {
-          const newSpot = {
-            grid_index: payload.new.grid_index,
-            message: payload.new.message,
-            location: payload.new.location,
-            color: Math.random() > 0.5 ? "#ff007f" : "#00f3ff"
-          };
-          setLiveSpots((current) => [...current, newSpot]);
+          setLiveSpots((current) => [payload.new as Spot, ...current]);
       }).subscribe();
 
     return () => { supabase.removeChannel(subscription); };
   }, []);
 
+  // Sanat Motoru
   useEffect(() => {
-    if (!isDataLoaded) return;
-
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext("2d", { alpha: false });
     if (!ctx) return;
 
+    const isDay = timeMode === "day";
+    const spotCount = typeof window !== "undefined" && window.innerWidth < 768 ? 2000 : 5000; 
+
     const seededRandom = (seed: number) => {
       const x = Math.sin(seed++) * 10000;
       return x - Math.floor(x);
     };
-
-    const isMobile = typeof window !== "undefined" && window.innerWidth < 768;
-    
-    // Mobilde daha az emoji çizerek karmaşayı/üst üste binmeyi önlüyoruz
-    const spotCount = isMobile ? 2000 : 5000; 
     
     const allSpots = Array.from({ length: spotCount }).map((_, index) => {
       const liveSpot = liveSpots.find(s => (s.grid_index % spotCount) === index);
@@ -68,88 +56,136 @@ export default function Crowd() {
         x: seededRandom(index * 123.456), 
         y: seededRandom(index * 987.654), 
         isFilled: !!liveSpot, 
-        color: liveSpot ? liveSpot.color : "#ffffff", 
         message: liveSpot ? liveSpot.message : "",
         location: liveSpot ? liveSpot.location : "",
-        grid_index: liveSpot ? liveSpot.grid_index : 0, 
       };
     });
 
-    // 🚀 ÇÖZÜM: Boş ve Dolu noktaları ayır. Önce boşlar, SONRA EN ÜSTE dolular çizilecek!
-    const emptySpots = allSpots.filter(spot => !spot.isFilled);
-    const filledSpots = allSpots.filter(spot => spot.isFilled);
+    const filledIndices = allSpots.map((spot, i) => spot.isFilled ? i : -1).filter(i => i !== -1);
 
     let animationFrameId: number;
-    let currentHeroIndex = -1;
-    let heroTimer = 0;
-    let heroDuration = 180; 
+    let activeAnimations: ActiveAnimation[] = [];
+    
+    // Animasyon Kuralları
+    const ANIMATION_DURATION = 5000; // 5 Saniye sürer
+    const FADE_IN_TIME = 1000; // İlk 1 saniye gri->sarı geçiş ve yükseliş
+    const FADE_OUT_TIME = 1000; // Son 1 saniye sarı->gri ve düşüş
 
-    const drawCrowd = () => {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
+    // Yumuşak yükseliş matematiği (Ease Out)
+    const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
 
-      if (heroTimer <= 0 && filledSpots.length > 0) {
-        const randomIndex = Math.floor(Math.random() * filledSpots.length);
-        // Doğrudan filledSpots içindeki index'i Hero yapıyoruz
-        currentHeroIndex = randomIndex;
-        heroTimer = heroDuration; 
+    // Rastgele Animasyon Tetikleyici
+    const triggerRandomAnimation = () => {
+      if (filledIndices.length === 0) return;
+      
+      // %10 ihtimalle "Rare Moment" (Aynı anda 2-3 tane kalkar)
+      const count = Math.random() > 0.9 ? Math.floor(Math.random() * 2) + 2 : 1;
+
+      for(let i=0; i<count; i++) {
+        // Yeni mesajlara daha çok öncelik vermek için basit bir hile (dizi başındakiler yeni kabul edilir)
+        const rand = Math.random();
+        const skewedIndex = Math.floor(rand * rand * filledIndices.length); 
+        const indexToAnimate = filledIndices[skewedIndex];
+
+        // Zaten animasyonda değilse ekle
+        if (!activeAnimations.find(a => a.index === indexToAnimate)) {
+          activeAnimations.push({ index: indexToAnimate, startTime: performance.now() });
+        }
       }
-      if (heroTimer > 0) heroTimer--; 
 
-      // 1. ÖNCE BOŞ SİLÜETLERİ (ARKA PLANI) ÇİZ
-      emptySpots.forEach((spot) => {
+      // Bir sonraki tetikleme 2 ile 5 saniye arası rastgele
+      setTimeout(triggerRandomAnimation, 2000 + Math.random() * 3000);
+    };
+
+    // İlk tetiklemeyi başlat
+    const timeoutId = setTimeout(triggerRandomAnimation, 2000);
+
+    const drawCrowd = (currentTime: number) => {
+      // Arkaplan Rengi (Gündüz/Gece)
+      ctx.fillStyle = isDay ? "#e2e2df" : "#0a0a0a";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // Biten animasyonları temizle
+      activeAnimations = activeAnimations.filter(a => currentTime - a.startTime < ANIMATION_DURATION);
+
+      allSpots.forEach((spot, index) => {
          const px = spot.x * canvas.width;
          const py = spot.y * canvas.height;
-         const distance = spot.y; 
+         const distance = spot.y; // 0 uzak, 1 yakın (2.5D derinlik hissi)
          
-         let size = (isMobile ? 8 : 4) + (distance * 18); 
-
-         ctx.globalAlpha = isMobile ? 0.3 + (distance * 0.3) : 0.15 + (distance * 0.3);
-         ctx.fillStyle = "#334155"; 
-         ctx.beginPath();
-         ctx.arc(px, py, size / 3, 0, Math.PI * 2);
-         ctx.fill();
-      });
-
-      // 2. SONRA DOLU (GERÇEK) MESAJLARI EN ÜSTE ÇİZ
-      filledSpots.forEach((spot, index) => {
-         const px = spot.x * canvas.width;
-         const py = spot.y * canvas.height;
-         const distance = spot.y; 
-
-         const isHero = index === currentHeroIndex && heroTimer > 0;
-
-         let baseSize = (isMobile ? 12 : 8) + (distance * 18); // Mobilde Gerçek Mesajlar KOCAMAN ve belirgin olsun
-         let size = isHero ? baseSize * 2.5 : baseSize; 
-
-         ctx.globalAlpha = isHero ? 1 : 0.9; // Her zaman çok parlak, asla kapanmaz
-         ctx.fillStyle = spot.color; // Pembe / Mavi Neon
-         ctx.font = `${size}px Arial`;
+         const isMobile = window.innerWidth < 768;
+         const baseSize = (isMobile ? 6 : 4) + (distance * 14); 
          
-         const drawY = isHero ? py - 10 : py;
-         ctx.fillText("🙌", px, drawY);
-         
-         if (isHero) {
-           const text = spot.message;
-           const shortText = text.length > 20 ? text.substring(0, 20) + "..." : text;
-           
-           const boxY = drawY - size - 40;
-           ctx.fillStyle = "rgba(0, 0, 0, 0.9)";
-           ctx.fillRect(px - 15, boxY, 160, 35);
-           ctx.strokeStyle = spot.color;
-           ctx.lineWidth = 1;
-           ctx.strokeRect(px - 15, boxY, 160, 35);
+         const activeAnim = activeAnimations.find(a => a.index === index);
 
-           ctx.fillStyle = "#a1a1aa"; 
-           ctx.font = "bold 9px Arial";
-           ctx.fillText(`📍 ${spot.location || "Gizli"}`, px - 10, boxY + 15);
+         if (activeAnim) {
+            // --- HAREKETLİ (YÜKSELEN) DURUM ---
+            const elapsed = currentTime - activeAnim.startTime;
+            let progress = 0;
+            let alpha = 1;
+            let glow = 0;
 
-           ctx.fillStyle = "#ffffff";
-           ctx.font = "bold 11px Arial";
-           ctx.fillText(shortText, px - 10, boxY + 30);
+            if (elapsed < FADE_IN_TIME) {
+              // Yükselme ve Sararma
+              progress = easeOutCubic(elapsed / FADE_IN_TIME);
+              glow = progress;
+              alpha = 0.3 + (0.7 * progress);
+            } else if (elapsed > ANIMATION_DURATION - FADE_OUT_TIME) {
+              // Düşme ve Griye Dönme
+              const outElapsed = elapsed - (ANIMATION_DURATION - FADE_OUT_TIME);
+              progress = 1 - easeOutCubic(outElapsed / FADE_OUT_TIME);
+              glow = progress;
+              alpha = 0.3 + (0.7 * progress);
+            } else {
+              // Havada asılı bekleme
+              progress = 1;
+              glow = 1;
+              alpha = 1;
+            }
+
+            const currentY = py - (progress * (isMobile ? 30 : 40)); // Havaya kalkma miktarı
+            const size = baseSize + (progress * (isMobile ? 15 : 10)); // Büyüme miktarı
+
+            // Glow ve Renk Efekti (Gri -> Neon Sarı)
+            ctx.globalAlpha = alpha;
+            ctx.font = `${size}px Arial`;
+            
+            // Eğer gündüzse sarı biraz daha koyu/turuncumsu olsun ki okunsun, geceyse neon sarı
+            const targetColor = isDay ? `rgba(230, 150, 0, ${glow})` : `rgba(255, 204, 0, ${glow})`;
+            ctx.fillStyle = glow > 0.1 ? targetColor : (isDay ? "#a1a1aa" : "#3f3f46");
+            
+            // Shadow (Glow) efekti sadece tepe noktasındayken tam çalışır
+            ctx.shadowColor = isDay ? "transparent" : "#ffcc00";
+            ctx.shadowBlur = glow * 15;
+            
+            ctx.fillText("🙌", px, currentY);
+            
+            // Mesajın Metni
+            if (glow > 0.5) {
+              ctx.shadowBlur = 0; // Yazılarda blur kapalı
+              ctx.fillStyle = isDay ? `rgba(0,0,0,${glow})` : `rgba(255,255,255,${glow})`;
+              
+              // Lokasyon
+              ctx.font = `bold ${isMobile ? 10 : 12}px Arial`;
+              ctx.fillText(`📍 ${spot.location || "Anonim"}`, px - 10, currentY - size - 10);
+              
+              // Mesaj
+              ctx.font = `${isMobile ? 12 : 14}px Arial`;
+              ctx.fillText(`"${spot.message}"`, px - 10, currentY - size + 5);
+            }
+            
+            ctx.shadowBlur = 0; // Sıfırla
+
+         } else {
+            // --- SAKİN (GRİ) DURUM ---
+            ctx.globalAlpha = isDay ? 0.4 + (distance * 0.3) : 0.1 + (distance * 0.2);
+            ctx.fillStyle = isDay ? "#a1a1aa" : "#27272a"; // Gündüz açık gri, Gece koyu antrasit
+            ctx.font = `${baseSize}px Arial`;
+            ctx.fillText("🙌", px, py);
          }
       });
 
-      animationFrameId = requestAnimationFrame(drawCrowd);
+      animationFrameId = requestAnimationFrame(() => drawCrowd(performance.now()));
     };
 
     const resize = () => {
@@ -164,77 +200,16 @@ export default function Crowd() {
       }
     };
 
-    const handleClick = (e: MouseEvent | TouchEvent) => {
-      const rect = canvas.getBoundingClientRect();
-      let cx = 0, cy = 0;
-
-      if ("touches" in e) {
-        if (e.touches.length > 0) {
-          cx = e.touches[0].clientX - rect.left;
-          cy = e.touches[0].clientY - rect.top;
-        }
-      } else {
-        cx = (e as MouseEvent).clientX - rect.left;
-        cy = (e as MouseEvent).clientY - rect.top;
-      }
-
-      // 🚀 Tıklama Kontrolünde Sadece Dolu Spotlara Bak (Tepkime süresi 10 kat artar)
-      const clickedSpot = filledSpots.find(spot => {
-         const px = spot.x * rect.width;
-         const py = spot.y * rect.height;
-         const dist = Math.sqrt(Math.pow(px - cx, 2) + Math.pow(py - cy, 2));
-         return dist < (isMobile ? 50 : 30); 
-      });
-
-      if (clickedSpot) {
-        setSelectedSpot(clickedSpot);
-      }
-    };
-
     window.addEventListener("resize", resize);
-    canvas.addEventListener("click", handleClick);
-    canvas.addEventListener("touchend", handleClick);
-    
     resize();
-    drawCrowd();
+    drawCrowd(performance.now());
 
     return () => {
       window.removeEventListener("resize", resize);
-      canvas.removeEventListener("click", handleClick);
-      canvas.removeEventListener("touchend", handleClick);
+      clearTimeout(timeoutId);
       cancelAnimationFrame(animationFrameId);
     };
-  }, [liveSpots, isDataLoaded]); 
+  }, [liveSpots, timeMode]);
 
-  return (
-    <>
-      <canvas ref={canvasRef} className="w-full h-full cursor-pointer block" />
-
-      {selectedSpot && (
-        <div 
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm cursor-pointer p-4"
-          onClick={() => setSelectedSpot(null)} 
-        >
-          <div 
-            className="bg-zinc-950 border border-zinc-800 p-6 sm:p-8 rounded-2xl w-[90%] max-w-sm text-center relative overflow-hidden"
-            style={{ boxShadow: `0 0 50px ${selectedSpot.color}40` }} 
-            onClick={(e) => e.stopPropagation()} 
-          >
-            <div className="absolute top-0 left-0 w-full h-2" style={{ backgroundColor: selectedSpot.color }} />
-            <span className="text-4xl sm:text-5xl mb-4 block" style={{ textShadow: `0 0 20px ${selectedSpot.color}` }}>🙌</span>
-            <h3 className="text-lg sm:text-xl font-bold text-white mb-6 break-words">"{selectedSpot.message}"</h3>
-            <p className="text-xs sm:text-sm font-bold tracking-widest uppercase text-zinc-500 mb-6">
-              📍 {selectedSpot.location || "GİZLİ KONUM"}
-            </p>
-            <button 
-              onClick={() => setSelectedSpot(null)}
-              className="w-full sm:w-auto bg-zinc-900 hover:bg-zinc-800 text-white font-bold py-3 px-8 rounded-full transition active:scale-95"
-            >
-              KAPAT
-            </button>
-          </div>
-        </div>
-      )}
-    </>
-  );
+  return <canvas ref={canvasRef} className="w-full h-full block" />;
 }
