@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { supabase } from "@/lib/supabase";
 import QRCode from "react-qr-code";
-import Link from "next/link"; // EKLENDİ: Sayfalar arası hızlı geçiş için
+import Link from "next/link"; 
 
 // 🛑 OTOMATİK SANSÜR LİSTESİ
 const BAD_WORDS = [
@@ -52,11 +52,8 @@ export default function QrPage() {
 
     if (!error) {
       setIsSuccess(true);
-      // Mesajı başarıyla attıktan sonra hemen sıfırlayalım ki form temizlensin
       setMessage("");
       setLocation("");
-      
-      // 5 saniye sonra başarı ekranı kapanır (kişi hala buradaysa)
       setTimeout(() => setIsSuccess(false), 5000);
     }
   };
@@ -65,14 +62,27 @@ export default function QrPage() {
     <main className="min-h-screen bg-zinc-950 flex flex-col items-center justify-center p-4 font-sans text-white">
       <div className="max-w-md w-full space-y-8">
         
-        {/* LOGO KISMI (Artık Ana Sayfaya Tıklanabilir!) */}
-        <div className="text-center space-y-2">
-          <Link href="/" className="inline-block hover:scale-105 transition-transform">
-            <h1 className="text-4xl font-black tracking-[0.2em] text-[#ffcc00] drop-shadow-[0_0_10px_rgba(255,204,0,0.3)]">
+        {/* LİDERLİK / BAŞLIK KISMI */}
+        <div className="text-center space-y-4">
+          <div>
+            <h1 className="text-4xl font-black tracking-[0.2em] text-[#ffcc00] drop-shadow-[0_0_10px_rgba(255,204,0,0.2)]">
               ELLER HAVAYA
             </h1>
+            <p className="text-zinc-500 text-sm tracking-widest uppercase mt-2">Dijital Kalabalığa Karış</p>
+          </div>
+
+          {/* 🔴 YENİ: ÇOK NET "CANLI YAYINA GİT" BUTONU */}
+          <Link 
+            href="/" 
+            className="inline-flex items-center justify-center gap-2 bg-zinc-900 border border-zinc-800 hover:border-[#ffcc00] hover:bg-black text-zinc-300 hover:text-[#ffcc00] px-6 py-3 rounded-full transition-all duration-300 shadow-lg group"
+          >
+            <span className="relative flex h-3 w-3">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
+            </span>
+            <span className="text-xs font-bold tracking-widest uppercase mt-[2px]">Dev Ekrana Git</span>
+            <span className="text-lg group-hover:translate-x-1 transition-transform">→</span>
           </Link>
-          <p className="text-zinc-500 text-sm tracking-widest uppercase">Dijital Kalabalığa Karış</p>
         </div>
 
         <div className="bg-black border border-zinc-800 p-6 rounded-2xl shadow-2xl">
@@ -84,7 +94,6 @@ export default function QrPage() {
                 <p className="text-sm text-zinc-500">Şimdi ana ekrana bak. Birazdan yükselecek...</p>
               </div>
               
-              {/* 🚀 ANA EKRANA GİT BUTONU */}
               <div className="pt-2">
                 <Link 
                   href="/" 
@@ -116,7 +125,7 @@ export default function QrPage() {
               </div>
               <button 
                 type="submit" disabled={isSubmitting}
-                className="w-full bg-[#ffcc00] text-black font-black py-4 rounded-xl hover:bg-white transition disabled:opacity-50 tracking-widest uppercase"
+                className="w-full bg-[#ffcc00] text-black font-black py-4 rounded-xl hover:bg-[#ffe066] transition disabled:opacity-50 tracking-widest uppercase shadow-[0_0_15px_rgba(255,204,0,0.3)] hover:shadow-[0_0_25px_rgba(255,204,0,0.5)]"
               >
                 {isSubmitting ? "GÖNDERİLİYOR..." : "KALABALIĞA İZ BIRAK"}
               </button>
